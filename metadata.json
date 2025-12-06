@@ -1,0 +1,9 @@
+{
+  "name": "CozyCorner",
+  "description": "A lo-fi, anime-inspired virtual co-working space with cozy vibes and dreamy aesthetics.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "display-capture"
+  ]
+}
