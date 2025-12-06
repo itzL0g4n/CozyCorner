@@ -24,6 +24,16 @@ const RTC_CONFIG = {
   ]
 };
 
+// Robust Tracker List for Signaling Stability
+const TRACKER_URLS = [
+  'wss://tracker.webtorrent.io',
+  'wss://tracker.openwebtorrent.com',
+  'wss://tracker.files.fm:7073/announce',
+  'wss://tracker.btorrent.xyz',
+  'wss://tracker.nanoha.org',
+  'wss://tracker.sloppyta.co:80/announce',
+];
+
 // Helper to strip non-serializable data (streams) before broadcasting
 const serializeUser = (user: User): Omit<User, 'stream'> => {
   const { stream, ...rest } = user;
@@ -60,11 +70,16 @@ const App: React.FC = () => {
   const roomRef = useRef<any>(null);
   const sendUpdateRef = useRef<any>(null);
   const usersRef = useRef<User[]>([]);
+  const screenStreamRef = useRef<MediaStream | null>(null);
 
   // Keep ref synced with state for event listeners
   useEffect(() => {
     usersRef.current = users;
   }, [users]);
+
+  useEffect(() => {
+    screenStreamRef.current = screenStream;
+  }, [screenStream]);
 
   // On Mount: Check for Room ID in URL
   useEffect(() => {
@@ -92,44 +107,48 @@ const App: React.FC = () => {
     try {
       audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       analyser = audioContext.createAnalyser();
-      microphone = audioContext.createMediaStreamSource(localStream);
-      microphone.connect(analyser);
+      
+      // Ensure local stream has audio tracks before connecting
+      if (localStream.getAudioTracks().length > 0) {
+        microphone = audioContext.createMediaStreamSource(localStream);
+        microphone.connect(analyser);
 
-      analyser.fftSize = 256;
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        analyser.fftSize = 256;
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-      const checkAudioLevel = () => {
-        if (!isMicOn) {
-          if (wasSpeaking) {
-             wasSpeaking = false;
-             setUsers(prev => prev.map(u => u.isLocal && !u.isScreenShare ? { ...u, isSpeaking: false } : u));
-             broadcastUpdate({ isSpeaking: false });
+        const checkAudioLevel = () => {
+          if (!isMicOn) {
+            if (wasSpeaking) {
+               wasSpeaking = false;
+               setUsers(prev => prev.map(u => u.isLocal && !u.isScreenShare ? { ...u, isSpeaking: false } : u));
+               broadcastUpdate({ isSpeaking: false });
+            }
+            animationFrameId = requestAnimationFrame(checkAudioLevel);
+            return;
           }
-          animationFrameId = requestAnimationFrame(checkAudioLevel);
-          return;
-        }
 
-        if (analyser) {
-          analyser.getByteFrequencyData(dataArray);
+          if (analyser) {
+            analyser.getByteFrequencyData(dataArray);
+            
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+              sum += dataArray[i];
+            }
+            const average = sum / dataArray.length;
+            const isSpeaking = average > 25; 
+
+            if (isSpeaking !== wasSpeaking) {
+              wasSpeaking = isSpeaking;
+              setUsers(prev => prev.map(u => u.isLocal && !u.isScreenShare ? { ...u, isSpeaking } : u));
+              broadcastUpdate({ isSpeaking });
+            }
+          }
           
-          let sum = 0;
-          for (let i = 0; i < dataArray.length; i++) {
-            sum += dataArray[i];
-          }
-          const average = sum / dataArray.length;
-          const isSpeaking = average > 25; 
+          animationFrameId = requestAnimationFrame(checkAudioLevel);
+        };
 
-          if (isSpeaking !== wasSpeaking) {
-            wasSpeaking = isSpeaking;
-            setUsers(prev => prev.map(u => u.isLocal && !u.isScreenShare ? { ...u, isSpeaking } : u));
-            broadcastUpdate({ isSpeaking });
-          }
-        }
-        
-        animationFrameId = requestAnimationFrame(checkAudioLevel);
-      };
-
-      checkAudioLevel();
+        checkAudioLevel();
+      }
 
     } catch (err) {
       console.error("Error initializing audio context:", err);
@@ -154,7 +173,7 @@ const App: React.FC = () => {
               // The update payload can contain extra metadata about streams
               const payload = {
                   user: serializeUser(updatedMe),
-                  screenStreamId: screenStream ? screenStream.id : null,
+                  screenStreamId: screenStreamRef.current ? screenStreamRef.current.id : null,
                   cameraStreamId: localStream ? localStream.id : null
               };
               
@@ -175,33 +194,35 @@ const App: React.FC = () => {
 
     try {
       // 1. Get Media Stream First
+      // Requesting specific resolution (480p) helps stability in P2P mesh
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: true
+          video: { height: 480, frameRate: 24 },
+          audio: { echoCancellation: true, noiseSuppression: true }
         });
         setLocalStream(stream);
       } catch (mediaErr: any) {
         console.error("Media Error:", mediaErr);
         if (mediaErr.name === 'NotAllowedError' || mediaErr.name === 'PermissionDeniedError') {
-           throw new Error("Camera/Microphone permissions are required.");
+           throw new Error("Camera/Microphone permissions are required to join.");
         }
-        throw new Error("Could not access camera/microphone.");
+        throw new Error(`Could not access camera: ${mediaErr.message || 'Unknown error'}`);
       }
 
       // 2. Initialize Trystero
-      // Pass rtcConfig for better stability
+      // Pass rtcConfig and explicit trackerUrls for stability
       const room = joinRoom({ 
           appId: 'cozy-corner-live-v1',
-          rtcConfig: RTC_CONFIG
-      }, roomId);
+          rtcConfig: RTC_CONFIG,
+          trackerUrls: TRACKER_URLS
+      } as any, roomId);
       
       roomRef.current = room;
 
       const [sendUpdate, getUpdate] = room.makeAction<any>('presence');
       sendUpdateRef.current = sendUpdate;
 
-      // 3. Add Stream Immediately
+      // 3. Add Stream Immediately (Broadcast to all current/future)
       room.addStream(stream);
 
       const localUser: User = {
@@ -284,20 +305,28 @@ const App: React.FC = () => {
       room.onPeerJoin((peerId: string) => {
           console.log("Peer joined:", peerId);
           
-          if (screenStream) {
-             room.addStream(screenStream);
+          // CRITICAL FIX: Explicitly add stream to the new peer to ensure they receive it.
+          // This fixes the issue where the second user only sees a picture (avatar) but no video.
+          if (stream) {
+            console.log("Offering local stream to:", peerId);
+            room.addStream(stream, peerId);
+          }
+
+          if (screenStreamRef.current) {
+             console.log("Offering screen stream to:", peerId);
+             room.addStream(screenStreamRef.current, peerId);
           }
           
-          // CRITICAL: Broadcast my state explicitly to this peer immediately
-          // This ensures they know who we are as soon as the data channel opens
+          // Broadcast my state explicitly to this peer immediately
           const me = usersRef.current.find(u => u.isLocal && !u.isScreenShare);
           if (me) {
               const payload = {
                   user: serializeUser(me),
                   cameraStreamId: stream?.id,
-                  screenStreamId: screenStream?.id
+                  screenStreamId: screenStreamRef.current?.id
               };
-              sendUpdate(payload);
+              // Small delay to ensure data channel is ready
+              setTimeout(() => sendUpdate(payload), 500);
           }
       });
 
@@ -373,10 +402,25 @@ const App: React.FC = () => {
         setLocalStream(null);
       }
       
-      setError(err.message || "Connection failed. Please check your network and try again.");
+      // Robust error message extraction to avoid [object Object]
+      let errorMessage = "Connection failed. Please check your network and try again.";
+      if (err?.message) {
+        errorMessage = err.message;
+      } else if (typeof err === 'string') {
+        errorMessage = err;
+      } else if (err && typeof err === 'object') {
+        try {
+            // If it's a weird object without message, try to stringify or fallback
+            const msg = JSON.stringify(err);
+            if (msg !== '{}') errorMessage = msg;
+        } catch (e) {
+            // fallback
+        }
+      }
+      
+      setError(errorMessage);
       setIsLoading(false);
     } finally {
-      // Don't set isLoading(false) here if connected, only on error
       if (!connected) {
          // If we successfully connected, loading state is handled by UI switch
       }
