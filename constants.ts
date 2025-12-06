@@ -1,3 +1,4 @@
+
 import { User, Decoration, Track } from './types';
 
 export const MOCK_USERS: User[] = [];
@@ -10,34 +11,8 @@ export const FLOATING_DECORATIONS: Decoration[] = [
   { id: 'd5', emoji: '💤', x: 90, y: 10, scale: 0.5, delay: 4 },
 ];
 
-// Using reliable audio sources for demo
-export const PLAYLIST: Track[] = [
-  {
-    id: 't1',
-    title: 'Acoustic Breeze',
-    artist: 'Benjamin Tissot',
-    url: 'https://www.bensound.com/bensound-music/bensound-acousticbreeze.mp3',
-    duration: '2:37'
-  },
-  {
-    id: 't2',
-    title: 'Sunny',
-    artist: 'Benjamin Tissot',
-    url: 'https://www.bensound.com/bensound-music/bensound-sunny.mp3',
-    duration: '2:20'
-  },
-  {
-    id: 't3',
-    title: 'Going Higher',
-    artist: 'Benjamin Tissot',
-    url: 'https://www.bensound.com/bensound-music/bensound-goinghigher.mp3',
-    duration: '4:04'
-  },
-  {
-    id: 't4',
-    title: 'Sweet',
-    artist: 'Benjamin Tissot',
-    url: 'https://www.bensound.com/bensound-music/bensound-sweet.mp3',
-    duration: '5:07'
-  }
-];
+// SoundCloud Track URL
+export const SOUNDCLOUD_TRACK_URL = 'https://soundcloud.com/lofi_girl/4-am-studysession';
+
+// Legacy playlist (kept for type compatibility if needed, but unused)
+export const PLAYLIST: Track[] = [];

@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Droplets, Heart } from 'lucide-react';
@@ -137,7 +136,6 @@ export const DraggableDeskItem: React.FC<DeskItemProps> = ({
   const elementRef = useRef<HTMLDivElement>(null);
 
   const handleDragEnd = (event: any, info: any) => {
-    // Robust position calculation using the element's actual rect
     if (elementRef.current) {
         const rect = elementRef.current.getBoundingClientRect();
         
@@ -145,7 +143,7 @@ export const DraggableDeskItem: React.FC<DeskItemProps> = ({
         const xPct = (rect.left / window.innerWidth) * 100;
         const yPct = (rect.top / window.innerHeight) * 100;
         
-        // Clamp values to ensure it stays somewhat on screen
+        // Clamp values 
         const clampedX = Math.max(0, Math.min(90, xPct));
         const clampedY = Math.max(0, Math.min(90, yPct));
 
@@ -154,11 +152,17 @@ export const DraggableDeskItem: React.FC<DeskItemProps> = ({
   };
 
   const handleInteraction = () => {
-      // Toggle selection for mobile/click users to access controls
       if (isEditable) {
           setIsSelected(!isSelected);
       }
   };
+
+  // Logic for animation:
+  // If editable (local user), we do NOT animate left/top because drag handles transform.
+  // If remote, we animate left/top to smoothly slide to new position.
+  const animationProps = isEditable 
+    ? { scale: 1, opacity: 1 }
+    : { scale: 1, opacity: 1, left: `${item.x}%`, top: `${item.y}%` };
 
   return (
     <motion.div
@@ -167,11 +171,18 @@ export const DraggableDeskItem: React.FC<DeskItemProps> = ({
       dragMomentum={false}
       dragElastic={0}
       onDragEnd={handleDragEnd}
-      initial={{ scale: 0, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
+      initial={{ scale: 0, opacity: 0, left: `${item.x}%`, top: `${item.y}%` }}
+      animate={animationProps}
+      transition={{ 
+         // Use spring for smooth remote movement, instantaneous for drag start
+         left: { type: "spring", stiffness: 50, damping: 20 },
+         top: { type: "spring", stiffness: 50, damping: 20 },
+         scale: { duration: 0.2 }
+      }}
       exit={{ scale: 0, opacity: 0 }}
       className={`absolute z-50 pointer-events-auto select-none touch-none ${isSelected ? 'z-[60]' : ''}`}
       style={{ 
+        // Only set initial styles here, motion handles the rest
         left: `${item.x}%`, 
         top: `${item.y}%`,
       }}
@@ -191,7 +202,7 @@ export const DraggableDeskItem: React.FC<DeskItemProps> = ({
               <div className="absolute -inset-4 border-2 border-dashed border-purple-300 rounded-full animate-spin-slow opacity-50 pointer-events-none" />
           )}
 
-          {/* Delete Button - Improved Visibility */}
+          {/* Delete Button - Positioned carefully to not be clipped */}
           <AnimatePresence>
             {isEditable && (isHovered || isSelected) && (
                 <motion.button 
@@ -202,10 +213,10 @@ export const DraggableDeskItem: React.FC<DeskItemProps> = ({
                         e.stopPropagation();
                         onRemove(item.id);
                     }}
-                    className="absolute -top-5 -right-5 bg-red-500 hover:bg-red-600 text-white rounded-full p-2.5 shadow-lg z-[100] flex items-center justify-center border-2 border-white cursor-pointer transition-transform hover:scale-110 active:scale-90"
+                    className="absolute -top-3 -right-3 bg-red-500 hover:bg-red-600 text-white rounded-full p-2 shadow-lg z-[100] flex items-center justify-center border-2 border-white cursor-pointer transition-transform hover:scale-110 active:scale-90"
                     title="Remove item"
                 >
-                    <X size={16} strokeWidth={3} />
+                    <X size={14} strokeWidth={3} />
                 </motion.button>
             )}
           </AnimatePresence>
@@ -224,7 +235,7 @@ export const DraggableDeskItem: React.FC<DeskItemProps> = ({
 
           {/* Persistent Owner Label */}
           {ownerName && (
-             <div className="mt-2 bg-white/70 backdrop-blur-md px-2 py-0.5 rounded-full text-[10px] font-bold text-slate-600 shadow-sm border border-white/50 pointer-events-none select-none">
+             <div className="mt-2 bg-white/80 backdrop-blur-md px-2 py-0.5 rounded-full text-[10px] font-bold text-slate-600 shadow-sm border border-white/50 pointer-events-none select-none whitespace-nowrap">
                 {ownerName}
              </div>
           )}

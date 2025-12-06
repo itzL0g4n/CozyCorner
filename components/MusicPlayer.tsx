@@ -1,198 +1,193 @@
+
 import React, { useState, useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Pause, SkipForward, SkipBack, Volume2, Music as MusicIcon, ListMusic } from 'lucide-react';
-import { PLAYLIST } from '../constants';
+import { motion } from 'framer-motion';
+import { Power, Volume2, X } from 'lucide-react';
+import { SOUNDCLOUD_TRACK_URL } from '../constants';
 
 interface MusicPlayerProps {
   onClose: () => void;
 }
 
+declare global {
+  interface Window {
+    SC: any;
+  }
+}
+
 export const MusicPlayer: React.FC<MusicPlayerProps> = ({ onClose }) => {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
-  const [volume, setVolume] = useState(0.5);
-  const [showPlaylist, setShowPlaylist] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [volume, setVolume] = useState(50);
+  const [isReady, setIsReady] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const widgetRef = useRef<any>(null);
 
-  const currentTrack = PLAYLIST[currentTrackIndex];
-
+  // Load SoundCloud Widget Script
   useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = volume;
-    }
-  }, [volume]);
-
-  useEffect(() => {
-    if (isPlaying) {
-      audioRef.current?.play().catch(e => console.error("Playback error", e));
+    const scriptId = 'soundcloud-widget-script';
+    if (!document.getElementById(scriptId)) {
+      const script = document.createElement('script');
+      script.id = scriptId;
+      script.src = 'https://w.soundcloud.com/player/api.js';
+      script.onload = initializeWidget;
+      document.body.appendChild(script);
+    } else if (window.SC) {
+      initializeWidget();
     } else {
-      audioRef.current?.pause();
+        // Script exists but SC global not yet ready, poll for it
+        const interval = setInterval(() => {
+            if (window.SC) {
+                clearInterval(interval);
+                initializeWidget();
+            }
+        }, 100);
+        return () => clearInterval(interval);
     }
-  }, [isPlaying, currentTrackIndex]);
+  }, []);
 
-  const handlePlayPause = () => {
-    setIsPlaying(!isPlaying);
+  const initializeWidget = () => {
+    if (!iframeRef.current || !window.SC) return;
+
+    try {
+        const widget = window.SC.Widget(iframeRef.current);
+        widgetRef.current = widget;
+
+        widget.bind(window.SC.Widget.Events.READY, () => {
+          setIsReady(true);
+          widget.setVolume(volume);
+        });
+
+        widget.bind(window.SC.Widget.Events.PLAY, () => {
+          setIsPlaying(true);
+        });
+
+        widget.bind(window.SC.Widget.Events.PAUSE, () => {
+          setIsPlaying(false);
+        });
+        
+        widget.bind(window.SC.Widget.Events.FINISH, () => {
+            setIsPlaying(false);
+        });
+
+    } catch (e) {
+        console.error("Error initializing SoundCloud widget", e);
+    }
   };
 
-  const handleNext = () => {
-    setCurrentTrackIndex((prev) => (prev + 1) % PLAYLIST.length);
+  const togglePlay = () => {
+    if (!widgetRef.current || !isReady) return;
+    widgetRef.current.toggle();
   };
 
-  const handlePrev = () => {
-    setCurrentTrackIndex((prev) => (prev - 1 + PLAYLIST.length) % PLAYLIST.length);
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newVol = parseInt(e.target.value);
+    setVolume(newVol);
+    if (widgetRef.current && isReady) {
+      widgetRef.current.setVolume(newVol);
+    }
   };
 
-  const handleTrackSelect = (index: number) => {
-    setCurrentTrackIndex(index);
-    setIsPlaying(true);
-  };
+  // Enable auto_play=flase
+  const embedUrl = `https://w.soundcloud.com/player/?url=${encodeURIComponent(SOUNDCLOUD_TRACK_URL)}&color=%23ff5500&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&show_teaser=false&visual=true`;
 
   return (
     <motion.div
-      className="fixed top-20 right-6 md:right-10 z-30 w-72 bg-white/70 backdrop-blur-xl rounded-3xl border border-white/80 shadow-xl overflow-hidden"
-      initial={{ scale: 0.8, opacity: 0, y: -20 }}
-      animate={{ scale: 1, opacity: 1, y: 0 }}
-      exit={{ scale: 0.8, opacity: 0, y: -20 }}
+      className="fixed top-24 right-4 md:right-8 z-30"
+      initial={{ scale: 0.8, opacity: 0, y: -20, rotateX: 20 }}
+      animate={{ scale: 1, opacity: 1, y: 0, rotateX: 0 }}
+      exit={{ scale: 0.8, opacity: 0, y: -20, rotateX: 20 }}
       transition={{ type: "spring", stiffness: 300, damping: 25 }}
     >
-      <audio
-        ref={audioRef}
-        src={currentTrack.url}
-        onEnded={handleNext}
-      />
-
-      {/* Header / Vinyl Visual */}
-      <div className="p-4 flex flex-col items-center justify-center relative bg-gradient-to-br from-indigo-50 to-pink-50">
-        <motion.div
-          className="w-32 h-32 rounded-full bg-slate-800 border-4 border-white/50 shadow-lg flex items-center justify-center relative overflow-hidden"
-          animate={{ rotate: isPlaying ? 360 : 0 }}
-          transition={{ duration: 8, ease: "linear", repeat: Infinity }}
-        >
-          {/* Vinyl Grooves */}
-          <div className="absolute inset-2 rounded-full border border-slate-700/50" />
-          <div className="absolute inset-6 rounded-full border border-slate-700/50" />
-          <div className="absolute inset-10 rounded-full border border-slate-700/50" />
-          
-          {/* Center Label */}
-          <div className="w-12 h-12 bg-pink-300 rounded-full border-2 border-white flex items-center justify-center">
-             <MusicIcon size={16} className="text-white opacity-80" />
-          </div>
-        </motion.div>
+      {/* TV Housing - Compact (w-56) */}
+      <div className="relative bg-slate-800 p-2.5 rounded-2xl shadow-2xl border-b-4 border-r-4 border-slate-900 w-56 flex flex-col gap-2">
         
-        {/* Floating notes */}
-        {isPlaying && (
-           <div className="absolute inset-0 overflow-hidden pointer-events-none">
-             {[...Array(3)].map((_, i) => (
-                <motion.div
-                    key={i}
-                    className="absolute text-pink-400"
-                    initial={{ opacity: 0, y: 80, x: 50 + (i * 20) }}
-                    animate={{ opacity: [0, 1, 0], y: -20, x: 50 + (i * 20) + (Math.random() * 20 - 10) }}
-                    transition={{ duration: 2, repeat: Infinity, delay: i * 0.8 }}
-                >
-                    ♪
-                </motion.div>
-             ))}
-           </div>
-        )}
-      </div>
-
-      {/* Track Info */}
-      <div className="px-5 py-2 text-center">
-        <h3 className="font-display font-bold text-slate-800 text-lg truncate">{currentTrack.title}</h3>
-        <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">{currentTrack.artist}</p>
-      </div>
-
-      {/* Controls */}
-      <div className="px-4 pb-4">
-        {/* Progress bar mock */}
-        <div className="w-full h-1 bg-slate-200 rounded-full mb-4 overflow-hidden">
-            <motion.div 
-                className="h-full bg-pink-400"
-                initial={{ width: "0%" }}
-                animate={{ width: isPlaying ? "100%" : "0%" }}
-                transition={{ duration: 180, ease: "linear" }}
-                key={currentTrackIndex} // Reset on track change
-            />
+        {/* Antennae */}
+        <div className="absolute -top-8 left-1/2 -translate-x-1/2 w-16 h-8 pointer-events-none -z-10">
+            <div className="absolute bottom-0 left-0 w-0.5 h-10 bg-slate-400 origin-bottom -rotate-[30deg]" />
+            <div className="absolute bottom-0 right-0 w-0.5 h-10 bg-slate-400 origin-bottom rotate-[25deg]" />
+            <div className={`absolute -top-1 -left-5 w-1.5 h-1.5 bg-red-500 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.8)] ${isPlaying ? 'animate-pulse' : ''}`} />
         </div>
 
-        <div className="flex items-center justify-between mb-4">
-            <button onClick={handlePrev} className="text-slate-500 hover:text-slate-800 transition-colors">
-                <SkipBack size={20} fill="currentColor" />
-            </button>
-            <button 
-                onClick={handlePlayPause} 
-                className="w-12 h-12 rounded-full bg-slate-800 text-white flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all"
-            >
-                {isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={22} fill="currentColor" className="ml-1" />}
-            </button>
-            <button onClick={handleNext} className="text-slate-500 hover:text-slate-800 transition-colors">
-                <SkipForward size={20} fill="currentColor" />
-            </button>
-        </div>
+        {/* Screen Container */}
+        <div className="relative w-full aspect-video bg-black rounded-md overflow-hidden shadow-[inset_0_0_15px_rgba(0,0,0,1)] border-2 border-slate-700 group">
+           {/* Screen Gloss/Reflection */}
+           <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent z-20 pointer-events-none" />
+           
+           {/* Scanlines Effect */}
+           <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-10 bg-[length:100%_2px,3px_100%] pointer-events-none opacity-30" />
 
-        {/* Volume & Playlist Toggle */}
-        <div className="flex items-center gap-3">
-             <Volume2 size={16} className="text-slate-400" />
-             <input 
-                type="range" 
-                min="0" 
-                max="1" 
-                step="0.01" 
-                value={volume} 
-                onChange={(e) => setVolume(parseFloat(e.target.value))}
-                className="flex-1 h-1.5 bg-slate-200 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-pink-400 [&::-webkit-slider-thumb]:rounded-full"
+           {/* The Player */}
+           <div className="w-full h-full relative z-0 bg-slate-900">
+             <iframe
+                ref={iframeRef}
+                src={embedUrl}
+                width="100%"
+                height="100%"
+                scrolling="no"
+                frameBorder="no"
+                allow="autoplay"
+                title="SoundCloud Player"
+                className="w-full h-full"
              />
-             <button 
-                onClick={() => setShowPlaylist(!showPlaylist)}
-                className={`p-1.5 rounded-lg transition-colors ${showPlaylist ? 'bg-pink-100 text-pink-500' : 'text-slate-400 hover:text-slate-600'}`}
-             >
-                 <ListMusic size={18} />
-             </button>
+             
+             {/* Static overlay when off or loading */}
+             {!isReady && (
+                 <div className="absolute inset-0 bg-slate-900 flex items-center justify-center z-30">
+                    <span className="text-slate-500 font-mono text-[8px] tracking-widest animate-pulse">TUNING...</span>
+                 </div>
+             )}
+           </div>
+        </div>
+
+        {/* Control Panel */}
+        <div className="bg-slate-700/50 rounded-lg p-2 flex items-center justify-between border-t border-white/10">
+             
+             {/* Volume Knob Area */}
+             <div className="flex items-center gap-2 flex-1 px-1">
+                <Volume2 size={14} className="text-slate-400 flex-shrink-0" />
+                <div className="flex-1 relative h-6 flex items-center group cursor-pointer">
+                    {/* Visual Track Background */}
+                    <div className="absolute inset-x-0 h-1.5 bg-slate-900 rounded-full overflow-hidden shadow-inner">
+                        {/* Fill - No duration for instant response */}
+                         <div 
+                            className="h-full bg-orange-500 rounded-full" 
+                            style={{ width: `${volume}%` }} 
+                        />
+                    </div>
+                    
+                    {/* Invisible Range Input - Large Hit Area */}
+                    <input 
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={volume}
+                        onChange={handleVolumeChange}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 m-0"
+                        aria-label="Volume"
+                    />
+                </div>
+             </div>
+
+             <div className="w-px h-4 bg-slate-600 mx-1" />
+
+             {/* Power / Toggle */}
+             <div className="flex items-center gap-1.5">
+                 <button 
+                    onClick={togglePlay}
+                    disabled={!isReady}
+                    className={`w-6 h-6 rounded-full flex items-center justify-center shadow-lg border border-slate-600 transition-all active:scale-95 ${isPlaying ? 'bg-orange-500/20 text-orange-400 shadow-[0_0_10px_rgba(251,146,60,0.3)]' : 'bg-slate-800 text-slate-500'}`}
+                 >
+                    <Power size={10} />
+                 </button>
+
+                 <button 
+                    onClick={onClose}
+                    className="w-5 h-5 rounded-full bg-red-500/10 text-red-400 flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors border border-red-500/30"
+                 >
+                    <X size={10} />
+                 </button>
+             </div>
         </div>
       </div>
-
-      {/* Playlist Drawer */}
-      <AnimatePresence>
-        {showPlaylist && (
-            <motion.div
-                className="bg-white/90 backdrop-blur-xl absolute inset-0 z-20 flex flex-col"
-                initial={{ y: "100%" }}
-                animate={{ y: 0 }}
-                exit={{ y: "100%" }}
-                transition={{ type: "spring", stiffness: 300, damping: 30 }}
-            >
-                <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-                    <h4 className="font-bold text-slate-700">Playlist</h4>
-                    <button onClick={() => setShowPlaylist(false)} className="text-slate-400 hover:text-slate-600">Close</button>
-                </div>
-                <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
-                    {PLAYLIST.map((track, idx) => (
-                        <button
-                            key={track.id}
-                            onClick={() => handleTrackSelect(idx)}
-                            className={`w-full text-left p-3 rounded-xl flex items-center justify-between group transition-colors ${currentTrackIndex === idx ? 'bg-pink-50' : 'hover:bg-slate-50'}`}
-                        >
-                            <div className="flex items-center gap-3 overflow-hidden">
-                                <span className={`text-xs font-bold w-4 ${currentTrackIndex === idx ? 'text-pink-500' : 'text-slate-300'}`}>{idx + 1}</span>
-                                <div className="truncate">
-                                    <div className={`font-bold text-sm ${currentTrackIndex === idx ? 'text-slate-800' : 'text-slate-600'}`}>{track.title}</div>
-                                    <div className="text-xs text-slate-400">{track.artist}</div>
-                                </div>
-                            </div>
-                            {currentTrackIndex === idx && isPlaying && (
-                                <div className="flex gap-0.5 items-end h-3">
-                                    <motion.div className="w-0.5 bg-pink-400" animate={{ height: [4, 12, 6] }} transition={{ repeat: Infinity, duration: 0.5 }} />
-                                    <motion.div className="w-0.5 bg-pink-400" animate={{ height: [8, 4, 10] }} transition={{ repeat: Infinity, duration: 0.6 }} />
-                                    <motion.div className="w-0.5 bg-pink-400" animate={{ height: [6, 10, 4] }} transition={{ repeat: Infinity, duration: 0.4 }} />
-                                </div>
-                            )}
-                        </button>
-                    ))}
-                </div>
-            </motion.div>
-        )}
-      </AnimatePresence>
     </motion.div>
   );
 };

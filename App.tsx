@@ -349,13 +349,9 @@ const App: React.FC = () => {
   };
 
   const createNewRoom = () => {
-    const adjectives = ['cozy', 'chill', 'dreamy', 'soft', 'quiet', 'warm'];
-    const nouns = ['nook', 'cafe', 'cloud', 'corner', 'study', 'loft'];
-    const randomAdjective = adjectives[Math.floor(Math.random() * adjectives.length)];
-    const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
-    const randomNum = Math.floor(Math.random() * 1000);
-    
-    setRoomId(`${randomAdjective}-${randomNoun}-${randomNum}`);
+    // Generate a 6-digit number string
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    setRoomId(code);
   };
 
   const handleLeave = () => {
@@ -568,8 +564,7 @@ const App: React.FC = () => {
           const newUsers = [...prev];
           newUsers[userIndex] = newUser;
 
-          // Broadcast explicit new list derived from current action, 
-          // avoiding stale state in closures/refs
+          // Broadcast explicit new list derived from current action
           broadcastUpdate({ deskItems: newDeskItems });
           
           return newUsers;
@@ -639,7 +634,7 @@ const App: React.FC = () => {
                           type="text" 
                           value={roomId}
                           onChange={(e) => setRoomId(e.target.value)}
-                          placeholder="e.g. chill-beats"
+                          placeholder="e.g. 123456"
                           className="w-full bg-white/50 border border-white focus:border-purple-300 focus:ring-4 focus:ring-purple-100 rounded-2xl px-5 py-3 outline-none text-slate-700 placeholder:text-slate-400 transition-all font-bold pr-10"
                         />
                    </div>
@@ -724,7 +719,7 @@ const App: React.FC = () => {
                 {users.flatMap(user => 
                    (user.deskItems || []).map(item => (
                        <DraggableDeskItem
-                          key={`${item.id}-${item.x}-${item.y}`}
+                          key={item.id} // IMPORTANT: Stable Key!
                           item={item}
                           ownerName={user.name}
                           isEditable={!!user.isLocal && !user.isScreenShare}
