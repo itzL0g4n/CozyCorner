@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BackgroundWrapper } from './components/BackgroundWrapper';
 import { VideoGrid } from './components/VideoGrid';
 import { ControlDock } from './components/ControlDock';
@@ -9,10 +9,15 @@ import { MusicPlayer } from './components/MusicPlayer';
 import { StudyBuddy } from './components/StudyBuddy';
 import { ItemPalette } from './components/ItemPalette';
 import { DraggableDeskItem } from './components/DeskItems';
-import { MOCK_USERS } from './constants';
 import { User, DeskItem, DeskItemType } from './types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Users, ArrowRight, Loader2, Sparkles, Plus } from 'lucide-react';
+
+// Helper to strip non-serializable data (streams) before broadcasting
+const serializeUser = (user: User): Omit<User, 'stream'> => {
+  const { stream, ...rest } = user;
+  return rest;
+};
 
 const App: React.FC = () => {
   const [connected, setConnected] = useState(false);
@@ -40,9 +45,17 @@ const App: React.FC = () => {
   // Layout State
   const [focusedUserId, setFocusedUserId] = useState<string | null>(null);
 
+  // Backend Simulation (BroadcastChannel)
+  const channelRef = useRef<BroadcastChannel | null>(null);
+  const usersRef = useRef<User[]>([]); // Ref to access latest users in event listeners
+
+  // Keep ref synced with state
+  useEffect(() => {
+    usersRef.current = users;
+  }, [users]);
+
   // On Mount: Check for Room ID in URL
   useEffect(() => {
-    // Wrap in try-catch as accessing window.location in some frames might be restricted
     try {
       const params = new URLSearchParams(window.location.search);
       const roomParam = params.get('room');
@@ -53,6 +66,95 @@ const App: React.FC = () => {
       console.warn("Could not read URL parameters", e);
     }
   }, []);
+
+  // --- BROADCAST CHANNEL SYNC (Simulated Backend) ---
+  useEffect(() => {
+    if (!connected || !roomId) return;
+
+    // Initialize Channel
+    const channel = new BroadcastChannel('cozy-corner-sync');
+    channelRef.current = channel;
+
+    // Broadcast Join Message
+    const localMe = usersRef.current.find(u => u.isLocal && !u.isScreenShare);
+    if (localMe) {
+        channel.postMessage({ type: 'JOIN', roomId, user: serializeUser(localMe) });
+    }
+
+    channel.onmessage = (event) => {
+        const msg = event.data;
+        if (msg.roomId !== roomId) return; // Ignore other rooms
+
+        switch (msg.type) {
+            case 'JOIN': {
+                // Another user joined. Add them.
+                setUsers(prev => {
+                    if (prev.find(u => u.id === msg.user.id)) return prev;
+                    return [...prev, { ...msg.user, isLocal: false }];
+                });
+                
+                // Reply with PRESENCE so they know about me
+                const me = usersRef.current.find(u => u.isLocal && !u.isScreenShare);
+                if (me) {
+                    channel.postMessage({ type: 'PRESENCE', roomId, user: serializeUser(me) });
+                }
+                const myScreen = usersRef.current.find(u => u.isLocal && u.isScreenShare);
+                if (myScreen) {
+                    channel.postMessage({ type: 'PRESENCE', roomId, user: serializeUser(myScreen) });
+                }
+                break;
+            }
+            case 'PRESENCE': {
+                // Existing user announcing themselves
+                setUsers(prev => {
+                    const existingIdx = prev.findIndex(u => u.id === msg.user.id);
+                    if (existingIdx !== -1) {
+                         // Update existing (e.g. if they changed name/state)
+                         const newUsers = [...prev];
+                         newUsers[existingIdx] = { ...newUsers[existingIdx], ...msg.user, isLocal: false };
+                         return newUsers;
+                    }
+                    return [...prev, { ...msg.user, isLocal: false }];
+                });
+                break;
+            }
+            case 'UPDATE': {
+                // Remote user updated state (mic, cam, items)
+                setUsers(prev => prev.map(u => 
+                    u.id === msg.userId ? { ...u, ...msg.changes, isLocal: false } : u
+                ));
+                break;
+            }
+            case 'LEAVE': {
+                setUsers(prev => prev.filter(u => u.id !== msg.userId));
+                break;
+            }
+        }
+    };
+
+    return () => {
+        // Send Leave message
+        const me = usersRef.current.find(u => u.isLocal && !u.isScreenShare);
+        if (me) {
+            channel.postMessage({ type: 'LEAVE', roomId, userId: me.id });
+        }
+        channel.close();
+    };
+  }, [connected, roomId]);
+
+  // Helper to broadcast updates
+  const broadcastUpdate = (changes: Partial<User>) => {
+      const me = usersRef.current.find(u => u.isLocal && !u.isScreenShare);
+      if (me && channelRef.current) {
+          channelRef.current.postMessage({
+              type: 'UPDATE',
+              roomId,
+              userId: me.id,
+              changes
+          });
+      }
+  };
+
 
   // Audio Level Detection for Visualizer
   useEffect(() => {
@@ -78,6 +180,7 @@ const App: React.FC = () => {
           if (wasSpeaking) {
              wasSpeaking = false;
              setUsers(prev => prev.map(u => u.isLocal && !u.isScreenShare ? { ...u, isSpeaking: false } : u));
+             broadcastUpdate({ isSpeaking: false });
           }
           animationFrameId = requestAnimationFrame(checkAudioLevel);
           return;
@@ -86,19 +189,17 @@ const App: React.FC = () => {
         if (analyser) {
           analyser.getByteFrequencyData(dataArray);
           
-          // Calculate average volume
           let sum = 0;
           for (let i = 0; i < dataArray.length; i++) {
             sum += dataArray[i];
           }
           const average = sum / dataArray.length;
-          
-          // Threshold for "speaking" - Increased to 25 to reduce background noise sensitivity
           const isSpeaking = average > 25; 
 
           if (isSpeaking !== wasSpeaking) {
             wasSpeaking = isSpeaking;
             setUsers(prev => prev.map(u => u.isLocal && !u.isScreenShare ? { ...u, isSpeaking } : u));
+            broadcastUpdate({ isSpeaking });
           }
         }
         
@@ -128,8 +229,6 @@ const App: React.FC = () => {
     setError('');
 
     try {
-      // 1. Get Camera/Mic Permissions
-      // We request them here. If it fails, we catch the error below.
       const stream = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: true
@@ -137,26 +236,23 @@ const App: React.FC = () => {
 
       setLocalStream(stream);
 
-      // 2. Create the "Me" user
       const localUser: User = {
-        id: 'local-user',
+        id: `user-${Date.now()}`, // Unique ID based on timestamp
         name: userName,
-        avatarUrl: `https://api.dicebear.com/7.x/notionists/svg?seed=${userName}`, // Generate avatar from name
+        avatarUrl: `https://api.dicebear.com/7.x/notionists/svg?seed=${userName}`,
         isSpeaking: false,
         isMuted: false,
         isVideoOff: false,
         color: 'bg-purple-200',
         stream: stream,
         isLocal: true,
-        deskItems: [] // Start empty
+        deskItems: []
       };
 
-      // 3. Merge with mock users (Now empty, so just me)
-      setUsers([localUser, ...MOCK_USERS]);
+      // Set only local user initially, others will sync via channel
+      setUsers([localUser]);
       setConnected(true);
       
-      // 4. Update URL so users can share it
-      // Wrap in try-catch because pushState fails in blob/iframe sandboxes
       try {
         const newUrl = new URL(window.location.href);
         newUrl.searchParams.set('room', roomId);
@@ -165,12 +261,10 @@ const App: React.FC = () => {
         console.warn("Could not update URL (likely due to sandbox environment):", urlError);
       }
       
-      // Auto open music for vibes
       setTimeout(() => setShowMusic(true), 1000);
 
     } catch (err: any) {
       console.error("Error accessing media devices:", err);
-      // More specific error messages
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
         setError("Camera/Microphone access denied. Please allow permissions to join.");
       } else if (err.name === 'NotFoundError') {
@@ -184,7 +278,6 @@ const App: React.FC = () => {
   };
 
   const createNewRoom = () => {
-    // Generate a cute random room ID
     const adjectives = ['cozy', 'chill', 'dreamy', 'soft', 'quiet', 'warm'];
     const nouns = ['nook', 'cafe', 'cloud', 'corner', 'study', 'loft'];
     const randomAdjective = adjectives[Math.floor(Math.random() * adjectives.length)];
@@ -195,7 +288,6 @@ const App: React.FC = () => {
   };
 
   const handleLeave = () => {
-    // Stop all tracks
     if (localStream) {
       localStream.getTracks().forEach(track => track.stop());
     }
@@ -223,10 +315,10 @@ const App: React.FC = () => {
         audioTrack.enabled = !audioTrack.enabled;
         setIsMicOn(audioTrack.enabled);
         
-        // Update local user state in the grid
         setUsers(prev => prev.map(u => 
           u.isLocal && !u.isScreenShare ? { ...u, isMuted: !audioTrack.enabled } : u
         ));
+        broadcastUpdate({ isMuted: !audioTrack.enabled });
       }
     }
   };
@@ -238,15 +330,14 @@ const App: React.FC = () => {
         videoTrack.enabled = !videoTrack.enabled;
         setIsCameraOn(videoTrack.enabled);
 
-        // Update local user state so grid shows avatar instead of black screen
         setUsers(prev => prev.map(u => 
           u.isLocal && !u.isScreenShare ? { ...u, isVideoOff: !videoTrack.enabled } : u
         ));
+        broadcastUpdate({ isVideoOff: !videoTrack.enabled });
       }
     }
   };
 
-  // Stop screen sharing helper
   const stopScreenShare = () => {
     if (screenStream) {
       screenStream.getTracks().forEach(track => track.stop());
@@ -254,10 +345,14 @@ const App: React.FC = () => {
     setScreenStream(null);
     setIsScreenSharing(false);
     
-    // Remove screen share user from grid
+    // Find ID of screen share user to send LEAVE
+    const screenUser = users.find(u => u.isLocal && u.isScreenShare);
+    if (screenUser && channelRef.current) {
+        channelRef.current.postMessage({ type: 'LEAVE', roomId, userId: screenUser.id });
+    }
+
     setUsers(prev => prev.filter(u => u.id !== 'local-screen'));
     
-    // If we were focused on the screen share, unfocus
     if (focusedUserId === 'local-screen') {
       setFocusedUserId(null);
     }
@@ -268,21 +363,20 @@ const App: React.FC = () => {
       stopScreenShare();
     } else {
       try {
-        // @ts-ignore - getDisplayMedia exists
+        // @ts-ignore
         const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
         
         setScreenStream(stream);
         setIsScreenSharing(true);
 
-        // Detect if user stops sharing via the browser native UI
         stream.getVideoTracks()[0].onended = () => {
           stopScreenShare();
         };
 
         const screenUser: User = {
-          id: 'local-screen',
+          id: `screen-${Date.now()}`,
           name: `${userName}'s Screen`,
-          avatarUrl: '', // Not used for screen share
+          avatarUrl: '', 
           isSpeaking: false,
           isMuted: true,
           isVideoOff: false,
@@ -293,13 +387,15 @@ const App: React.FC = () => {
         };
 
         setUsers(prev => [...prev, screenUser]);
+        setFocusedUserId(screenUser.id);
         
-        // Auto-focus the new screen share
-        setFocusedUserId('local-screen');
+        // Broadcast presence of screen share
+        if (channelRef.current) {
+            channelRef.current.postMessage({ type: 'JOIN', roomId, user: serializeUser(screenUser) });
+        }
         
       } catch (err: any) {
         console.error("Error sharing screen:", err);
-        // Don't show alert if user simply cancelled the dialog
         if (err.name !== 'NotAllowedError') {
              alert("Unable to share screen. This feature may not be supported in this environment.");
         }
@@ -338,42 +434,66 @@ const App: React.FC = () => {
       const newItem: DeskItem = {
           id: Date.now().toString(),
           type,
-          x: 40 + (Math.random() * 20), // Center-ish random screen coords
+          x: 40 + (Math.random() * 20), 
           y: 40 + (Math.random() * 20),
           data: initialData
       };
 
-      setUsers(prev => prev.map(u => {
-          if (u.isLocal && !u.isScreenShare) {
-              return { ...u, deskItems: [...(u.deskItems || []), newItem] };
+      setUsers(prev => {
+          const nextState = prev.map(u => {
+              if (u.isLocal && !u.isScreenShare) {
+                  return { ...u, deskItems: [...(u.deskItems || []), newItem] };
+              }
+              return u;
+          });
+          
+          // Broadcast the new item list
+          const me = nextState.find(u => u.isLocal && !u.isScreenShare);
+          if (me && channelRef.current) {
+               broadcastUpdate({ deskItems: me.deskItems });
           }
-          return u;
-      }));
+          return nextState;
+      });
   };
 
   const handleUpdateDeskItem = (userId: string, itemId: string, data: any) => {
-      // Only allow updating if it's the local user
-      setUsers(prev => prev.map(u => {
-          if (u.id === userId && u.isLocal) {
-              return {
-                  ...u,
-                  deskItems: u.deskItems?.map(item => item.id === itemId ? { ...item, data } : item)
-              };
+      setUsers(prev => {
+          const nextState = prev.map(u => {
+              if (u.id === userId && u.isLocal) {
+                  return {
+                      ...u,
+                      deskItems: u.deskItems?.map(item => item.id === itemId ? { ...item, data } : item)
+                  };
+              }
+              return u;
+          });
+
+          const me = nextState.find(u => u.id === userId);
+          if (me && channelRef.current) {
+              broadcastUpdate({ deskItems: me.deskItems });
           }
-          return u;
-      }));
+          return nextState;
+      });
   };
 
   const handleRemoveDeskItem = (userId: string, itemId: string) => {
-     setUsers(prev => prev.map(u => {
-          if (u.id === userId && u.isLocal) {
-              return {
-                  ...u,
-                  deskItems: u.deskItems?.filter(item => item.id !== itemId)
-              };
+     setUsers(prev => {
+          const nextState = prev.map(u => {
+              if (u.id === userId && u.isLocal) {
+                  return {
+                      ...u,
+                      deskItems: u.deskItems?.filter(item => item.id !== itemId)
+                  };
+              }
+              return u;
+          });
+          
+          const me = nextState.find(u => u.id === userId);
+          if (me && channelRef.current) {
+              broadcastUpdate({ deskItems: me.deskItems });
           }
-          return u;
-     }));
+          return nextState;
+     });
   };
 
   // Login Screen
@@ -387,7 +507,6 @@ const App: React.FC = () => {
             animate={{ scale: 1, opacity: 1 }}
             className="w-full max-w-md bg-white/40 backdrop-blur-xl p-8 md:p-10 rounded-[2.5rem] shadow-2xl border border-white/60 relative overflow-hidden"
           >
-             {/* Decorative blob behind form */}
              <div className="absolute -top-20 -right-20 w-40 h-40 bg-purple-300 rounded-full blur-3xl opacity-30" />
              <div className="absolute -bottom-20 -left-20 w-40 h-40 bg-pink-300 rounded-full blur-3xl opacity-30" />
 
@@ -484,10 +603,8 @@ const App: React.FC = () => {
                 {roomId || "Lofi Room"}
              </h2>
 
-             {/* Divider */}
              <div className="w-px h-4 bg-slate-400/50" />
 
-             {/* User Count */}
              <div className="flex items-center gap-1.5 text-slate-600 font-bold text-sm" title="Users online">
                 <Users size={14} className="text-slate-500" />
                 <motion.span 
@@ -501,10 +618,9 @@ const App: React.FC = () => {
              </div>
         </div>
 
-        {/* Ambient Decorations */}
         <FloatyDecorations />
 
-        {/* Global Desk Items Layer - Renders above video but below modals/dock */}
+        {/* Global Desk Items Layer */}
         <div className="absolute inset-0 z-20 pointer-events-none overflow-hidden">
              <AnimatePresence>
                 {users.flatMap(user => 
@@ -512,9 +628,7 @@ const App: React.FC = () => {
                        <DraggableDeskItem
                           key={item.id}
                           item={item}
-                          // Only allow editing own items (excluding screen shares)
                           isEditable={!!user.isLocal && !user.isScreenShare}
-                          // Since items are global, containerRef is undefined to allow full screen dragging
                           containerRef={undefined} 
                           onUpdate={(id, data) => handleUpdateDeskItem(user.id, id, data)}
                           onRemove={(id) => handleRemoveDeskItem(user.id, id)}
@@ -532,7 +646,6 @@ const App: React.FC = () => {
             {showStudyBuddy && <StudyBuddy onClose={() => setShowStudyBuddy(false)} />}
         </AnimatePresence>
         
-        {/* Item Palette */}
         <AnimatePresence>
             {showDecorations && (
                 <ItemPalette 
