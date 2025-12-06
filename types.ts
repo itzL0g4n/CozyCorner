@@ -1,3 +1,4 @@
+
 import { LucideIcon } from 'lucide-react';
 
 export type DeskItemType = 'note' | 'plant' | 'coffee' | 'pet';
@@ -55,4 +56,38 @@ export interface ChatMessage {
   text: string;
   sources?: { title: string; uri: string }[];
   timestamp: number;
+}
+
+// --- Whiteboard Types ---
+
+export type WhiteboardTool = 
+  | 'select' 
+  | 'pen' 
+  | 'eraser' 
+  | 'rect' 
+  | 'circle' 
+  | 'line' 
+  | 'arrow' 
+  | 'text';
+
+export interface WhiteboardElement {
+  id: string;
+  type: 'path' | 'rect' | 'circle' | 'line' | 'arrow' | 'text';
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  stroke: string;
+  strokeWidth: number;
+  fill?: string;
+  points?: { x: number; y: number }[]; // For paths
+  text?: string;
+  rotation: number;
+  fontSize?: number;
+}
+
+export interface WhiteboardAction {
+  type: 'ADD' | 'UPDATE' | 'DELETE' | 'SYNC';
+  data?: WhiteboardElement | WhiteboardElement[];
+  elementId?: string;
 }

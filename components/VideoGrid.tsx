@@ -8,6 +8,7 @@ interface VideoGridProps {
   users: User[];
   focusedUserId: string | null;
   onFocusUser: (id: string | null) => void;
+  customStage?: React.ReactNode; // New Prop for Whiteboard
 }
 
 interface VideoCardProps {
@@ -150,10 +151,44 @@ const VideoCard: React.FC<VideoCardProps> = ({
 export const VideoGrid: React.FC<VideoGridProps> = ({ 
     users, 
     focusedUserId, 
-    onFocusUser
+    onFocusUser,
+    customStage
 }) => {
   const focusedUser = users.find(u => u.id === focusedUserId);
-  const otherUsers = users.filter(u => u.id !== focusedUserId);
+  const otherUsers = focusedUserId ? users.filter(u => u.id !== focusedUserId) : users;
+  
+  // If customStage is provided, we treat it as if a user is focused (Filmstrip mode)
+  // but the main stage is the custom content.
+  if (customStage) {
+      return (
+          <div className="w-full h-full flex flex-col p-2 md:p-4 gap-2">
+            {/* Custom Stage */}
+            <div className="flex-1 min-h-0 w-full flex justify-center items-center relative z-0">
+                <motion.div 
+                    className="w-full h-full rounded-2xl mx-auto flex items-center justify-center bg-transparent" 
+                    initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                >
+                    {customStage}
+                </motion.div>
+            </div>
+
+            {/* Filmstrip (All Users) */}
+            <div className="h-28 w-full flex-shrink-0 z-20">
+                <div className="flex items-center gap-4 overflow-x-auto h-full px-4 pb-2 custom-scrollbar justify-center md:justify-start">
+                    {users.map((user) => (
+                        <motion.div key={user.id} layoutId={`video-${user.id}`}>
+                            <VideoCard 
+                                user={user} 
+                                minimal={true}
+                                onClick={() => onFocusUser(user.id)}
+                            />
+                        </motion.div>
+                    ))}
+                </div>
+            </div>
+          </div>
+      );
+  }
 
   // If we have a focused user, we switch to "Stage" layout (Discord-like)
   if (focusedUser) {

@@ -1,7 +1,8 @@
+
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Mic, MicOff, Video, VideoOff, Monitor, MonitorOff, Coffee, PhoneOff, Music, Sparkles, LayoutGrid
+  Mic, MicOff, Video, VideoOff, Monitor, MonitorOff, Coffee, PhoneOff, Music, Sparkles, LayoutGrid, PenTool
 } from 'lucide-react';
 import { DockItem } from '../types';
 
@@ -10,11 +11,14 @@ interface ControlDockProps {
   toggleMusic: () => void;
   toggleStudyBuddy: () => void;
   toggleTimer: () => void;
-  toggleDecorations: () => void; // New toggle
+  toggleDecorations: () => void;
+  toggleWhiteboard: () => void; // New
+  
   isMusicOpen: boolean;
   isStudyBuddyOpen: boolean;
   isTimerOpen: boolean;
-  isDecorationsOpen: boolean; // New state
+  isDecorationsOpen: boolean;
+  isWhiteboardOpen: boolean; // New
   
   // Media Controls
   isMicOn: boolean;
@@ -31,10 +35,12 @@ export const ControlDock: React.FC<ControlDockProps> = ({
   toggleStudyBuddy,
   toggleTimer,
   toggleDecorations,
+  toggleWhiteboard,
   isMusicOpen,
   isStudyBuddyOpen,
   isTimerOpen,
   isDecorationsOpen,
+  isWhiteboardOpen,
   isMicOn,
   isCameraOn,
   isScreenSharing,
@@ -58,6 +64,13 @@ export const ControlDock: React.FC<ControlDockProps> = ({
       icon: isCameraOn ? Video : VideoOff,
       action: onToggleCamera,
       isActive: !isCameraOn
+    },
+    { 
+      id: 'whiteboard',
+      label: isWhiteboardOpen ? 'Close Board' : 'Whiteboard',
+      icon: PenTool,
+      action: toggleWhiteboard,
+      isActive: isWhiteboardOpen
     },
     { 
       id: 'music',

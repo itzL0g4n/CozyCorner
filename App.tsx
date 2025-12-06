@@ -9,7 +9,8 @@ import { MusicPlayer } from './components/MusicPlayer';
 import { StudyBuddy } from './components/StudyBuddy';
 import { ItemPalette } from './components/ItemPalette';
 import { DraggableDeskItem } from './components/DeskItems';
-import { User, DeskItem, DeskItemType } from './types';
+import { Whiteboard } from './components/Whiteboard';
+import { User, DeskItem, DeskItemType, WhiteboardElement, WhiteboardAction } from './types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Users, ArrowRight, Loader2, Sparkles } from 'lucide-react';
 import { joinRoom, selfId } from 'trystero/torrent';
@@ -43,6 +44,7 @@ const App: React.FC = () => {
   const [showStudyBuddy, setShowStudyBuddy] = useState(false);
   const [showTimer, setShowTimer] = useState(true);
   const [showDecorations, setShowDecorations] = useState(false);
+  const [showWhiteboard, setShowWhiteboard] = useState(false); // New
   
   // Logic State
   const [roomId, setRoomId] = useState('');
@@ -60,12 +62,16 @@ const App: React.FC = () => {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
 
+  // Whiteboard State
+  const [whiteboardElements, setWhiteboardElements] = useState<WhiteboardElement[]>([]);
+
   // Layout State
   const [focusedUserId, setFocusedUserId] = useState<string | null>(null);
 
   // WebRTC Refs
   const roomRef = useRef<any>(null);
   const sendUpdateRef = useRef<any>(null);
+  const sendWhiteboardRef = useRef<any>(null); // New
   const usersRef = useRef<User[]>([]);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const heartbeatRef = useRef<any>(null);
@@ -180,6 +186,25 @@ const App: React.FC = () => {
       }
   };
 
+  const handleWhiteboardAction = (action: WhiteboardAction) => {
+      // 1. Update Local State
+      if (action.type === 'ADD') {
+          setWhiteboardElements(prev => [...prev, action.data as WhiteboardElement]);
+      } else if (action.type === 'UPDATE') {
+          const updatedEl = action.data as WhiteboardElement;
+          setWhiteboardElements(prev => prev.map(el => el.id === updatedEl.id ? updatedEl : el));
+      } else if (action.type === 'DELETE') {
+          setWhiteboardElements(prev => prev.filter(el => el.id !== action.elementId));
+      } else if (action.type === 'SYNC') {
+          setWhiteboardElements(action.data as WhiteboardElement[]);
+      }
+
+      // 2. Broadcast to Peers
+      if (sendWhiteboardRef.current) {
+          sendWhiteboardRef.current(action);
+      }
+  };
+
   const handleConnect = async (e: React.FormEvent) => {
     e.preventDefault();
     if(!roomId.trim() || !userName.trim()) return;
@@ -216,6 +241,9 @@ const App: React.FC = () => {
 
       const [sendUpdate, getUpdate] = room.makeAction<any>('presence');
       sendUpdateRef.current = sendUpdate;
+      
+      const [sendWhiteboard, getWhiteboard] = room.makeAction<any>('whiteboard');
+      sendWhiteboardRef.current = sendWhiteboard;
 
       // 3. Add Stream Immediately (Broadcast to all)
       room.addStream(stream);
@@ -306,7 +334,23 @@ const App: React.FC = () => {
           });
       });
 
-      // B. Handle Peer Joining (Handshake)
+      // B. Handle Whiteboard Actions
+      getWhiteboard((data, peerId) => {
+          const action = data as WhiteboardAction;
+          console.log("Whiteboard Action from", peerId, action);
+          if (action.type === 'ADD') {
+              setWhiteboardElements(prev => [...prev, action.data as WhiteboardElement]);
+          } else if (action.type === 'UPDATE') {
+              const updatedEl = action.data as WhiteboardElement;
+              setWhiteboardElements(prev => prev.map(el => el.id === updatedEl.id ? updatedEl : el));
+          } else if (action.type === 'DELETE') {
+              setWhiteboardElements(prev => prev.filter(el => el.id !== action.elementId));
+          } else if (action.type === 'SYNC') {
+              setWhiteboardElements(action.data as WhiteboardElement[]);
+          }
+      });
+
+      // C. Handle Peer Joining (Handshake)
       room.onPeerJoin((peerId: string) => {
           console.log("Peer joined:", peerId);
           
@@ -324,9 +368,21 @@ const App: React.FC = () => {
           
           // Send immediate presence to this peer
           setTimeout(() => broadcastUpdate({}), 500);
+
+          // SYNC Whiteboard to new peer
+          // (Simple strategy: Host or everyone sends SYNC. 
+          // Since we don't have a designated host, everyone sends it. 
+          // The peer will just render the latest received).
+          setTimeout(() => {
+              if (sendWhiteboardRef.current) {
+                   // We don't have targeted send in this wrapper easily, so we broadcast.
+                   // Ideally we'd filter, but broadcasting SYNC is okay for small rooms.
+                   sendWhiteboardRef.current({ type: 'SYNC', data: whiteboardElements });
+              }
+          }, 1000);
       });
 
-      // C. Handle Peer Leaving (Debounced)
+      // D. Handle Peer Leaving (Debounced)
       room.onPeerLeave((peerId: string) => {
           console.log("Peer left signal:", peerId);
           
@@ -340,7 +396,7 @@ const App: React.FC = () => {
           pendingLeavesRef.current.set(peerId, timeoutId);
       });
 
-      // D. Handle Incoming Streams
+      // E. Handle Incoming Streams
       room.onPeerStream((remoteStream: MediaStream, peerId: string) => {
           console.log("Received stream from:", peerId, remoteStream.id);
           
@@ -363,10 +419,6 @@ const App: React.FC = () => {
               }
 
               const user = prev[userIndex];
-              
-              // If it's the main stream (we guess by checking if we already have one, or simple assignment)
-              // NOTE: Trystero doesn't easily distinguish stream IDs without metadata.
-              // We rely on the order or if the user already has a stream.
               
               if (!user.stream || user.stream.id === remoteStream.id) {
                   const newUsers = [...prev];
@@ -447,6 +499,8 @@ const App: React.FC = () => {
     setIsScreenSharing(false);
     setFocusedUserId(null);
     setShowDecorations(false);
+    setShowWhiteboard(false);
+    setWhiteboardElements([]);
     setIsLoading(false);
     
     const newUrl = new URL(window.location.href);
@@ -538,6 +592,7 @@ const App: React.FC = () => {
 
         setUsers(prev => [...prev, screenUser]);
         setFocusedUserId(screenUser.id);
+        setShowWhiteboard(false); // Close whiteboard if sharing screen
         
         // Broadcast update with new screen stream ID
         if (sendUpdateRef.current) {
@@ -651,6 +706,19 @@ const App: React.FC = () => {
           
           return newUsers;
      });
+  };
+
+  const toggleWhiteboard = () => {
+      if (showWhiteboard) {
+          setShowWhiteboard(false);
+          setFocusedUserId(null);
+      } else {
+          setShowWhiteboard(true);
+          setFocusedUserId(null); // Clear focus to allow custom stage to take over
+          if (isScreenSharing) {
+              stopScreenShare();
+          }
+      }
   };
 
   // Login Screen
@@ -813,11 +881,21 @@ const App: React.FC = () => {
         </AnimatePresence>
 
         {/* Main Content Area */}
-        <div className={`flex-1 flex flex-col relative z-10 overflow-hidden transition-all duration-500 ${focusedUserId ? 'pt-14 pb-0' : 'pt-20 pb-32'}`}>
+        <div className={`flex-1 flex flex-col relative z-10 overflow-hidden transition-all duration-500 ${focusedUserId || showWhiteboard ? 'pt-14 pb-0' : 'pt-20 pb-32'}`}>
           <VideoGrid 
             users={users} 
             focusedUserId={focusedUserId}
-            onFocusUser={setFocusedUserId}
+            onFocusUser={(id) => {
+                if (id) setShowWhiteboard(false);
+                setFocusedUserId(id);
+            }}
+            customStage={showWhiteboard ? (
+                <Whiteboard 
+                    elements={whiteboardElements} 
+                    onUpdate={handleWhiteboardAction} 
+                    currentUser={selfId}
+                />
+            ) : undefined}
           />
         </div>
 
@@ -828,10 +906,12 @@ const App: React.FC = () => {
             toggleStudyBuddy={() => setShowStudyBuddy(!showStudyBuddy)}
             toggleTimer={() => setShowTimer(!showTimer)}
             toggleDecorations={() => setShowDecorations(!showDecorations)}
+            toggleWhiteboard={toggleWhiteboard}
             isMusicOpen={showMusic}
             isStudyBuddyOpen={showStudyBuddy}
             isTimerOpen={showTimer}
             isDecorationsOpen={showDecorations}
+            isWhiteboardOpen={showWhiteboard}
             isMicOn={isMicOn}
             isCameraOn={isCameraOn}
             isScreenSharing={isScreenSharing}
