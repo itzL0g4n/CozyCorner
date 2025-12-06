@@ -229,8 +229,6 @@ const App: React.FC = () => {
                   const existingScreenIndex = prev.findIndex(u => u.id === screenId);
 
                   if (hasScreen && existingScreenIndex === -1) {
-                      // We might have the stream waiting in a buffer or it will arrive shortly
-                      // We create the placeholder; stream attachment happens in onPeerStream
                       newUsers.push({
                           id: screenId,
                           name: `${incomingUser.name}'s Screen`,
@@ -243,7 +241,6 @@ const App: React.FC = () => {
                           isLocal: false
                       });
                   } else if (!hasScreen && existingScreenIndex !== -1) {
-                      // Remove screen share if they stopped
                       newUsers.splice(existingScreenIndex, 1);
                   }
 
@@ -287,16 +284,8 @@ const App: React.FC = () => {
           console.log("Received stream from:", peerId, remoteStream.id);
           
           setUsers(prev => {
-              // Check if this is a screen share stream
-              // We do this by checking if we have a "screen" user for this peer 
-              // OR if the stream ID matches what they told us (if we stored that mapping)
-              // Since we don't easily store the mapping in this simple state, we use a heuristic:
-              // If the user already has a stream, this second one is likely screen share.
-              
               const userIndex = prev.findIndex(u => u.id === peerId);
               if (userIndex === -1) {
-                  // User data hasn't arrived yet, wait for it? 
-                  // Or create a placeholder. Let's create placeholder.
                    return [...prev, {
                       id: peerId,
                       name: 'Connecting...',
@@ -312,14 +301,12 @@ const App: React.FC = () => {
 
               const user = prev[userIndex];
               
-              // If main user has no stream, assign this one
               if (!user.stream) {
                   const newUsers = [...prev];
                   newUsers[userIndex] = { ...user, stream: remoteStream };
                   return newUsers;
               }
               
-              // If main user HAS stream, and IDs differ, this is screen share
               if (user.stream.id !== remoteStream.id) {
                    const screenId = `${peerId}-screen`;
                    const screenIndex = prev.findIndex(u => u.id === screenId);
@@ -329,7 +316,6 @@ const App: React.FC = () => {
                        newUsers[screenIndex] = { ...newUsers[screenIndex], stream: remoteStream };
                        return newUsers;
                    } else {
-                       // Create screen user
                        return [...prev, {
                           id: screenId,
                           name: `${user.name}'s Screen`,
@@ -395,7 +381,6 @@ const App: React.FC = () => {
     setFocusedUserId(null);
     setShowDecorations(false);
     
-    // Clear URL param
     const newUrl = new URL(window.location.href);
     newUrl.searchParams.delete('room');
     window.history.pushState({}, '', newUrl);
@@ -447,7 +432,6 @@ const App: React.FC = () => {
       setFocusedUserId(null);
     }
     
-    // Broadcast update that screen share is gone (payload.screenStreamId will be null)
     if (sendUpdateRef.current) {
          const me = usersRef.current.find(u => u.isLocal && !u.isScreenShare);
          if (me) {
@@ -476,7 +460,6 @@ const App: React.FC = () => {
           stopScreenShare();
         };
         
-        // Add stream to WebRTC room
         if (roomRef.current) {
             roomRef.current.addStream(stream);
         }
@@ -497,7 +480,6 @@ const App: React.FC = () => {
         setUsers(prev => [...prev, screenUser]);
         setFocusedUserId(screenUser.id);
         
-        // Broadcast update
         if (sendUpdateRef.current) {
              const me = usersRef.current.find(u => u.isLocal && !u.isScreenShare);
              if (me) {
@@ -548,7 +530,7 @@ const App: React.FC = () => {
       }
 
       const newItem: DeskItem = {
-          id: Date.now().toString(),
+          id: crypto.randomUUID(), // Use UUID for unique IDs
           type,
           x: 40 + (Math.random() * 20), 
           y: 40 + (Math.random() * 20),
@@ -556,58 +538,59 @@ const App: React.FC = () => {
       };
 
       setUsers(prev => {
-          const nextState = prev.map(u => {
-              if (u.isLocal && !u.isScreenShare) {
-                  return { ...u, deskItems: [...(u.deskItems || []), newItem] };
-              }
-              return u;
-          });
+          const userIndex = prev.findIndex(u => u.isLocal && !u.isScreenShare);
+          if (userIndex === -1) return prev;
           
-          const me = nextState.find(u => u.isLocal && !u.isScreenShare);
-          if (me) {
-               broadcastUpdate({ deskItems: me.deskItems });
-          }
-          return nextState;
+          const me = prev[userIndex];
+          const newDeskItems = [...(me.deskItems || []), newItem];
+          const newUser = { ...me, deskItems: newDeskItems };
+          
+          const newUsers = [...prev];
+          newUsers[userIndex] = newUser;
+          
+          broadcastUpdate({ deskItems: newDeskItems });
+          
+          return newUsers;
       });
   };
 
-  const handleUpdateDeskItem = (userId: string, itemId: string, data: any) => {
+  const handleUpdateDeskItem = (userId: string, itemId: string, updates: Partial<DeskItem>) => {
       setUsers(prev => {
-          const nextState = prev.map(u => {
-              if (u.id === userId && u.isLocal) {
-                  return {
-                      ...u,
-                      deskItems: u.deskItems?.map(item => item.id === itemId ? { ...item, data } : item)
-                  };
-              }
-              return u;
-          });
+          const userIndex = prev.findIndex(u => u.id === userId && u.isLocal);
+          if (userIndex === -1) return prev;
 
-          const me = nextState.find(u => u.id === userId);
-          if (me) {
-              broadcastUpdate({ deskItems: me.deskItems });
-          }
-          return nextState;
+          const me = prev[userIndex];
+          const newDeskItems = me.deskItems?.map(item => 
+              item.id === itemId ? { ...item, ...updates } : item
+          ) || [];
+
+          const newUser = { ...me, deskItems: newDeskItems };
+          const newUsers = [...prev];
+          newUsers[userIndex] = newUser;
+
+          // Broadcast explicit new list derived from current action, 
+          // avoiding stale state in closures/refs
+          broadcastUpdate({ deskItems: newDeskItems });
+          
+          return newUsers;
       });
   };
 
   const handleRemoveDeskItem = (userId: string, itemId: string) => {
      setUsers(prev => {
-          const nextState = prev.map(u => {
-              if (u.id === userId && u.isLocal) {
-                  return {
-                      ...u,
-                      deskItems: u.deskItems?.filter(item => item.id !== itemId)
-                  };
-              }
-              return u;
-          });
+          const userIndex = prev.findIndex(u => u.id === userId && u.isLocal);
+          if (userIndex === -1) return prev;
+
+          const me = prev[userIndex];
+          const newDeskItems = me.deskItems?.filter(item => item.id !== itemId) || [];
+
+          const newUser = { ...me, deskItems: newDeskItems };
+          const newUsers = [...prev];
+          newUsers[userIndex] = newUser;
           
-          const me = nextState.find(u => u.id === userId);
-          if (me) {
-              broadcastUpdate({ deskItems: me.deskItems });
-          }
-          return nextState;
+          broadcastUpdate({ deskItems: newDeskItems });
+          
+          return newUsers;
      });
   };
 
@@ -741,11 +724,11 @@ const App: React.FC = () => {
                 {users.flatMap(user => 
                    (user.deskItems || []).map(item => (
                        <DraggableDeskItem
-                          key={item.id}
+                          key={`${item.id}-${item.x}-${item.y}`}
                           item={item}
+                          ownerName={user.name}
                           isEditable={!!user.isLocal && !user.isScreenShare}
-                          containerRef={undefined} 
-                          onUpdate={(id, data) => handleUpdateDeskItem(user.id, id, data)}
+                          onUpdate={(id, updates) => handleUpdateDeskItem(user.id, id, updates)}
                           onRemove={(id) => handleRemoveDeskItem(user.id, id)}
                        />
                    ))
