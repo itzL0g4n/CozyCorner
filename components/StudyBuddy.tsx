@@ -1,5 +1,6 @@
+
 import React, { useState, useRef, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, useDragControls } from 'framer-motion';
 import { Send, Sparkles, X, ExternalLink, Bot, User as UserIcon } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { ChatMessage } from '../types';
@@ -20,6 +21,7 @@ export const StudyBuddy: React.FC<StudyBuddyProps> = ({ onClose }) => {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const dragControls = useDragControls();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -90,10 +92,17 @@ export const StudyBuddy: React.FC<StudyBuddyProps> = ({ onClose }) => {
       animate={{ scale: 1, opacity: 1, y: 0 }}
       exit={{ scale: 0.8, opacity: 0, y: 20 }}
       transition={{ type: "spring", stiffness: 300, damping: 25 }}
+      drag
+      dragListener={false}
+      dragMomentum={false}
+      dragControls={dragControls}
     >
-        {/* Header */}
-        <div className="p-4 border-b border-indigo-100 flex items-center justify-between bg-indigo-50/50">
-            <div className="flex items-center gap-2">
+        {/* Header - Drag Handle */}
+        <div 
+            className="p-4 border-b border-indigo-100 flex items-center justify-between bg-indigo-50/50 cursor-move touch-none"
+            onPointerDown={(e) => dragControls.start(e)}
+        >
+            <div className="flex items-center gap-2 pointer-events-none">
                 <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center">
                     <Sparkles size={16} className="text-indigo-500" />
                 </div>
@@ -105,7 +114,11 @@ export const StudyBuddy: React.FC<StudyBuddyProps> = ({ onClose }) => {
                     </div>
                 </div>
             </div>
-            <button onClick={onClose} className="p-1 hover:bg-white/50 rounded-full transition-colors text-slate-400 hover:text-slate-600">
+            <button 
+                onClick={onClose} 
+                className="p-1 hover:bg-white/50 rounded-full transition-colors text-slate-400 hover:text-slate-600 pointer-events-auto"
+                onPointerDown={(e) => e.stopPropagation()} // Prevent dragging when clicking close
+            >
                 <X size={18} />
             </button>
         </div>

@@ -176,6 +176,10 @@ const App: React.FC = () => {
       const [sendUpdate, getUpdate] = room.makeAction<any>('presence');
       sendUpdateRef.current = sendUpdate;
 
+      // IMMEDIATE STREAM ADDITION
+      // Add stream once upon joining. Trystero handles sharing with new/existing peers.
+      room.addStream(stream);
+
       const localUser: User = {
         id: selfId, // Use Trystero selfId as our main ID
         name: userName,
@@ -191,6 +195,14 @@ const App: React.FC = () => {
 
       setUsers([localUser]);
       setConnected(true);
+
+      // IMMEDIATE PRESENCE BROADCAST
+      // Don't wait for ref updates or intervals. Announce "I am here" immediately.
+      sendUpdate({
+          user: serializeUser(localUser),
+          cameraStreamId: stream.id,
+          screenStreamId: null
+      });
       
       // Update URL
       try {
@@ -255,8 +267,7 @@ const App: React.FC = () => {
       // 2. Handle Peer Joining (Send them my state)
       room.onPeerJoin((peerId: string) => {
           console.log("Peer joined:", peerId);
-          // Add my stream to them
-          room.addStream(stream);
+          
           if (screenStream) {
              room.addStream(screenStream);
           }

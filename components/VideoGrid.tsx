@@ -29,10 +29,10 @@ const VideoCard: React.FC<VideoCardProps> = ({
 
   // Attach stream to video element when available
   useEffect(() => {
-    if (user.stream && !user.isVideoOff && videoRef.current) {
+    if (user.stream && videoRef.current) {
       videoRef.current.srcObject = user.stream;
     }
-  }, [user.stream, user.isVideoOff]);
+  }, [user.stream]); // Removed user.isVideoOff dependency to prevent re-attaching stream needlessly
 
   // Only mirror if it's the local user AND NOT a screen share
   const shouldMirror = user.isLocal && !user.isScreenShare;
@@ -82,23 +82,30 @@ const VideoCard: React.FC<VideoCardProps> = ({
             }}
         >
             <div className={`relative w-full h-full flex items-center justify-center ${isFocused ? 'bg-transparent' : 'bg-black/5'}`}>
-                {user.stream && !user.isVideoOff ? (
-                <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted={user.isLocal} // Mute self
-                    className={`w-full h-full ${shouldMirror ? 'transform scale-x-[-1]' : ''} ${user.isScreenShare || isFocused ? 'object-contain' : 'object-cover'}`}
-                />
-                ) : (
-                <>
-                    <img 
-                        src={user.avatarUrl} 
-                        alt={user.name} 
-                        className={`w-full h-full ${isFocused ? 'object-contain' : 'object-cover'} opacity-90 transition-opacity duration-300 group-hover:opacity-100`} 
+                {/* 
+                   ALWAYS render video if stream exists to ensure AUDIO plays.
+                   Use CSS to hide it if video is off. 
+                */}
+                {user.stream && (
+                    <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted={user.isLocal} // Mute self
+                        className={`w-full h-full ${shouldMirror ? 'transform scale-x-[-1]' : ''} ${user.isScreenShare || isFocused ? 'object-contain' : 'object-cover'} ${user.isVideoOff ? 'opacity-0 absolute pointer-events-none' : ''}`}
                     />
-                    <div className={`absolute inset-0 ${isFocused ? '' : 'bg-gradient-to-t from-black/20 to-transparent'}`} />
-                </>
+                )}
+                
+                {/* Fallback Avatar UI (Visible if no stream OR video is off) */}
+                {(!user.stream || user.isVideoOff) && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-transparent z-20">
+                        <img 
+                            src={user.avatarUrl} 
+                            alt={user.name} 
+                            className={`w-full h-full ${isFocused ? 'object-contain' : 'object-cover'} opacity-90 transition-opacity duration-300 group-hover:opacity-100`} 
+                        />
+                        <div className={`absolute inset-0 ${isFocused ? '' : 'bg-gradient-to-t from-black/20 to-transparent'}`} />
+                    </div>
                 )}
             </div>
 

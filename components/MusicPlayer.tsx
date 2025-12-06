@@ -96,9 +96,11 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({ onClose }) => {
       animate={{ scale: 1, opacity: 1, y: 0, rotateX: 0 }}
       exit={{ scale: 0.8, opacity: 0, y: -20, rotateX: 20 }}
       transition={{ type: "spring", stiffness: 300, damping: 25 }}
+      drag
+      dragMomentum={false}
     >
       {/* TV Housing - Compact (w-56) */}
-      <div className="relative bg-slate-800 p-2.5 rounded-2xl shadow-2xl border-b-4 border-r-4 border-slate-900 w-56 flex flex-col gap-2">
+      <div className="relative bg-slate-800 p-2.5 rounded-2xl shadow-2xl border-b-4 border-r-4 border-slate-900 w-56 flex flex-col gap-2 cursor-move">
         
         {/* Antennae */}
         <div className="absolute -top-8 left-1/2 -translate-x-1/2 w-16 h-8 pointer-events-none -z-10">
@@ -139,10 +141,13 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({ onClose }) => {
         </div>
 
         {/* Control Panel */}
-        <div className="bg-slate-700/50 rounded-lg p-2 flex items-center justify-between border-t border-white/10">
+        <div className="bg-slate-700/50 rounded-lg p-2 flex items-center justify-between border-t border-white/10 cursor-auto">
              
              {/* Volume Knob Area */}
-             <div className="flex items-center gap-2 flex-1 px-1">
+             <div 
+                className="flex items-center gap-2 flex-1 px-1"
+                onPointerDownCapture={(e) => e.stopPropagation()} // Prevent drag starting from slider
+             >
                 <Volume2 size={14} className="text-slate-400 flex-shrink-0" />
                 <div className="flex-1 relative h-6 flex items-center group cursor-pointer">
                     {/* Visual Track Background */}
@@ -170,7 +175,10 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({ onClose }) => {
              <div className="w-px h-4 bg-slate-600 mx-1" />
 
              {/* Power / Toggle */}
-             <div className="flex items-center gap-1.5">
+             <div 
+                className="flex items-center gap-1.5"
+                onPointerDownCapture={(e) => e.stopPropagation()} // Prevent drag starting from buttons
+             >
                  <button 
                     onClick={togglePlay}
                     disabled={!isReady}
