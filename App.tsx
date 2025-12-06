@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BackgroundWrapper } from './components/BackgroundWrapper';
 import { VideoGrid } from './components/VideoGrid';
 import { ControlDock } from './components/ControlDock';
@@ -11,7 +11,8 @@ import { ItemPalette } from './components/ItemPalette';
 import { DraggableDeskItem } from './components/DeskItems';
 import { User, DeskItem, DeskItemType } from './types';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Users, ArrowRight, Loader2, Sparkles, Plus } from 'lucide-react';
+import { Users, ArrowRight, Loader2, Sparkles } from 'lucide-react';
+import { joinRoom, selfId } from 'trystero/torrent';
 
 // Helper to strip non-serializable data (streams) before broadcasting
 const serializeUser = (user: User): Omit<User, 'stream'> => {
@@ -45,11 +46,12 @@ const App: React.FC = () => {
   // Layout State
   const [focusedUserId, setFocusedUserId] = useState<string | null>(null);
 
-  // Backend Simulation (BroadcastChannel)
-  const channelRef = useRef<BroadcastChannel | null>(null);
-  const usersRef = useRef<User[]>([]); // Ref to access latest users in event listeners
+  // WebRTC Refs
+  const roomRef = useRef<any>(null);
+  const sendUpdateRef = useRef<any>(null);
+  const usersRef = useRef<User[]>([]);
 
-  // Keep ref synced with state
+  // Keep ref synced with state for event listeners
   useEffect(() => {
     usersRef.current = users;
   }, [users]);
@@ -66,95 +68,6 @@ const App: React.FC = () => {
       console.warn("Could not read URL parameters", e);
     }
   }, []);
-
-  // --- BROADCAST CHANNEL SYNC (Simulated Backend) ---
-  useEffect(() => {
-    if (!connected || !roomId) return;
-
-    // Initialize Channel
-    const channel = new BroadcastChannel('cozy-corner-sync');
-    channelRef.current = channel;
-
-    // Broadcast Join Message
-    const localMe = usersRef.current.find(u => u.isLocal && !u.isScreenShare);
-    if (localMe) {
-        channel.postMessage({ type: 'JOIN', roomId, user: serializeUser(localMe) });
-    }
-
-    channel.onmessage = (event) => {
-        const msg = event.data;
-        if (msg.roomId !== roomId) return; // Ignore other rooms
-
-        switch (msg.type) {
-            case 'JOIN': {
-                // Another user joined. Add them.
-                setUsers(prev => {
-                    if (prev.find(u => u.id === msg.user.id)) return prev;
-                    return [...prev, { ...msg.user, isLocal: false }];
-                });
-                
-                // Reply with PRESENCE so they know about me
-                const me = usersRef.current.find(u => u.isLocal && !u.isScreenShare);
-                if (me) {
-                    channel.postMessage({ type: 'PRESENCE', roomId, user: serializeUser(me) });
-                }
-                const myScreen = usersRef.current.find(u => u.isLocal && u.isScreenShare);
-                if (myScreen) {
-                    channel.postMessage({ type: 'PRESENCE', roomId, user: serializeUser(myScreen) });
-                }
-                break;
-            }
-            case 'PRESENCE': {
-                // Existing user announcing themselves
-                setUsers(prev => {
-                    const existingIdx = prev.findIndex(u => u.id === msg.user.id);
-                    if (existingIdx !== -1) {
-                         // Update existing (e.g. if they changed name/state)
-                         const newUsers = [...prev];
-                         newUsers[existingIdx] = { ...newUsers[existingIdx], ...msg.user, isLocal: false };
-                         return newUsers;
-                    }
-                    return [...prev, { ...msg.user, isLocal: false }];
-                });
-                break;
-            }
-            case 'UPDATE': {
-                // Remote user updated state (mic, cam, items)
-                setUsers(prev => prev.map(u => 
-                    u.id === msg.userId ? { ...u, ...msg.changes, isLocal: false } : u
-                ));
-                break;
-            }
-            case 'LEAVE': {
-                setUsers(prev => prev.filter(u => u.id !== msg.userId));
-                break;
-            }
-        }
-    };
-
-    return () => {
-        // Send Leave message
-        const me = usersRef.current.find(u => u.isLocal && !u.isScreenShare);
-        if (me) {
-            channel.postMessage({ type: 'LEAVE', roomId, userId: me.id });
-        }
-        channel.close();
-    };
-  }, [connected, roomId]);
-
-  // Helper to broadcast updates
-  const broadcastUpdate = (changes: Partial<User>) => {
-      const me = usersRef.current.find(u => u.isLocal && !u.isScreenShare);
-      if (me && channelRef.current) {
-          channelRef.current.postMessage({
-              type: 'UPDATE',
-              roomId,
-              userId: me.id,
-              changes
-          });
-      }
-  };
-
 
   // Audio Level Detection for Visualizer
   useEffect(() => {
@@ -219,6 +132,26 @@ const App: React.FC = () => {
     };
   }, [localStream, isMicOn, connected]);
 
+  const broadcastUpdate = (changes: Partial<User>) => {
+      if (sendUpdateRef.current) {
+          const me = usersRef.current.find(u => u.isLocal && !u.isScreenShare);
+          if (me) {
+              // We send the FULL user object + changes to ensure sync, 
+              // but we strip the stream object
+              const updatedMe = { ...me, ...changes };
+              
+              // If we are sharing screen, we also need to send the screen share info
+              // The update payload can contain extra metadata about streams
+              const payload = {
+                  user: serializeUser(updatedMe),
+                  screenStreamId: screenStream ? screenStream.id : null,
+                  cameraStreamId: localStream ? localStream.id : null
+              };
+              
+              sendUpdateRef.current(payload);
+          }
+      }
+  };
 
   // Handle Join Room
   const handleConnect = async (e: React.FormEvent) => {
@@ -236,8 +169,15 @@ const App: React.FC = () => {
 
       setLocalStream(stream);
 
+      // Initialize Trystero
+      const room = joinRoom({ appId: 'cozy-corner-live-v1' }, roomId);
+      roomRef.current = room;
+
+      const [sendUpdate, getUpdate] = room.makeAction<any>('presence');
+      sendUpdateRef.current = sendUpdate;
+
       const localUser: User = {
-        id: `user-${Date.now()}`, // Unique ID based on timestamp
+        id: selfId, // Use Trystero selfId as our main ID
         name: userName,
         avatarUrl: `https://api.dicebear.com/7.x/notionists/svg?seed=${userName}`,
         isSpeaking: false,
@@ -249,29 +189,174 @@ const App: React.FC = () => {
         deskItems: []
       };
 
-      // Set only local user initially, others will sync via channel
       setUsers([localUser]);
       setConnected(true);
       
+      // Update URL
       try {
         const newUrl = new URL(window.location.href);
         newUrl.searchParams.set('room', roomId);
         window.history.pushState({}, '', newUrl);
       } catch (urlError) {
-        console.warn("Could not update URL (likely due to sandbox environment):", urlError);
+        console.warn("Could not update URL:", urlError);
       }
       
       setTimeout(() => setShowMusic(true), 1000);
 
+      // --- Trystero Event Listeners ---
+
+      // 1. Handle incoming state updates
+      getUpdate((payload, peerId) => {
+          setUsers(prev => {
+              const existingUserIndex = prev.findIndex(u => u.id === peerId);
+              const incomingUser = payload.user;
+
+              // Handle Main User
+              if (existingUserIndex !== -1) {
+                  // Update existing
+                  const newUsers = [...prev];
+                  newUsers[existingUserIndex] = {
+                      ...newUsers[existingUserIndex],
+                      ...incomingUser,
+                      isLocal: false,
+                      // Preserve the stream if we already have it
+                      stream: newUsers[existingUserIndex].stream
+                  };
+                  
+                  // Handle Screen Share Phantom User
+                  const screenId = `${peerId}-screen`;
+                  const hasScreen = !!payload.screenStreamId;
+                  const existingScreenIndex = prev.findIndex(u => u.id === screenId);
+
+                  if (hasScreen && existingScreenIndex === -1) {
+                      // We might have the stream waiting in a buffer or it will arrive shortly
+                      // We create the placeholder; stream attachment happens in onPeerStream
+                      newUsers.push({
+                          id: screenId,
+                          name: `${incomingUser.name}'s Screen`,
+                          avatarUrl: '',
+                          isSpeaking: false,
+                          isMuted: true,
+                          isVideoOff: false,
+                          isScreenShare: true,
+                          color: 'bg-blue-100',
+                          isLocal: false
+                      });
+                  } else if (!hasScreen && existingScreenIndex !== -1) {
+                      // Remove screen share if they stopped
+                      newUsers.splice(existingScreenIndex, 1);
+                  }
+
+                  return newUsers;
+              } else {
+                  // New User Found via Data
+                  return [...prev, { ...incomingUser, id: peerId, isLocal: false }];
+              }
+          });
+      });
+
+      // 2. Handle Peer Joining (Send them my state)
+      room.onPeerJoin((peerId: string) => {
+          console.log("Peer joined:", peerId);
+          // Add my stream to them
+          room.addStream(stream);
+          if (screenStream) {
+             room.addStream(screenStream);
+          }
+          
+          // Broadcast my state explicitly to this peer (and everyone else to be safe)
+          const me = usersRef.current.find(u => u.isLocal && !u.isScreenShare);
+          if (me) {
+              const payload = {
+                  user: serializeUser(me),
+                  cameraStreamId: stream.id,
+                  screenStreamId: screenStream?.id
+              };
+              sendUpdate(payload);
+          }
+      });
+
+      // 3. Handle Peer Leaving
+      room.onPeerLeave((peerId: string) => {
+          console.log("Peer left:", peerId);
+          setUsers(prev => prev.filter(u => u.id !== peerId && u.id !== `${peerId}-screen`));
+      });
+
+      // 4. Handle Incoming Streams
+      room.onPeerStream((remoteStream: MediaStream, peerId: string) => {
+          console.log("Received stream from:", peerId, remoteStream.id);
+          
+          setUsers(prev => {
+              // Check if this is a screen share stream
+              // We do this by checking if we have a "screen" user for this peer 
+              // OR if the stream ID matches what they told us (if we stored that mapping)
+              // Since we don't easily store the mapping in this simple state, we use a heuristic:
+              // If the user already has a stream, this second one is likely screen share.
+              
+              const userIndex = prev.findIndex(u => u.id === peerId);
+              if (userIndex === -1) {
+                  // User data hasn't arrived yet, wait for it? 
+                  // Or create a placeholder. Let's create placeholder.
+                   return [...prev, {
+                      id: peerId,
+                      name: 'Connecting...',
+                      avatarUrl: `https://api.dicebear.com/7.x/notionists/svg?seed=${peerId}`,
+                      isSpeaking: false,
+                      isMuted: false,
+                      isVideoOff: false,
+                      color: 'bg-gray-200',
+                      stream: remoteStream,
+                      isLocal: false
+                   }];
+              }
+
+              const user = prev[userIndex];
+              
+              // If main user has no stream, assign this one
+              if (!user.stream) {
+                  const newUsers = [...prev];
+                  newUsers[userIndex] = { ...user, stream: remoteStream };
+                  return newUsers;
+              }
+              
+              // If main user HAS stream, and IDs differ, this is screen share
+              if (user.stream.id !== remoteStream.id) {
+                   const screenId = `${peerId}-screen`;
+                   const screenIndex = prev.findIndex(u => u.id === screenId);
+                   
+                   if (screenIndex !== -1) {
+                       const newUsers = [...prev];
+                       newUsers[screenIndex] = { ...newUsers[screenIndex], stream: remoteStream };
+                       return newUsers;
+                   } else {
+                       // Create screen user
+                       return [...prev, {
+                          id: screenId,
+                          name: `${user.name}'s Screen`,
+                          avatarUrl: '',
+                          isSpeaking: false,
+                          isMuted: true,
+                          isVideoOff: false,
+                          isScreenShare: true,
+                          color: 'bg-blue-100',
+                          stream: remoteStream,
+                          isLocal: false
+                       }];
+                   }
+              }
+
+              return prev;
+          });
+      });
+
     } catch (err: any) {
-      console.error("Error accessing media devices:", err);
+      console.error("Error accessing media devices or connecting:", err);
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
         setError("Camera/Microphone access denied. Please allow permissions to join.");
-      } else if (err.name === 'NotFoundError') {
-        setError("No camera or microphone found on this device.");
       } else {
-        setError("Could not start video. Please check your settings.");
+        setError("Could not connect. Please check your network.");
       }
+      setIsLoading(false);
     } finally {
       setIsLoading(false);
     }
@@ -288,6 +373,9 @@ const App: React.FC = () => {
   };
 
   const handleLeave = () => {
+    if (roomRef.current) {
+        roomRef.current.leave();
+    }
     if (localStream) {
       localStream.getTracks().forEach(track => track.stop());
     }
@@ -306,6 +394,11 @@ const App: React.FC = () => {
     setIsScreenSharing(false);
     setFocusedUserId(null);
     setShowDecorations(false);
+    
+    // Clear URL param
+    const newUrl = new URL(window.location.href);
+    newUrl.searchParams.delete('room');
+    window.history.pushState({}, '', newUrl);
   };
 
   const toggleMic = () => {
@@ -341,20 +434,30 @@ const App: React.FC = () => {
   const stopScreenShare = () => {
     if (screenStream) {
       screenStream.getTracks().forEach(track => track.stop());
+      if (roomRef.current) {
+          roomRef.current.removeStream(screenStream);
+      }
     }
     setScreenStream(null);
     setIsScreenSharing(false);
     
-    // Find ID of screen share user to send LEAVE
-    const screenUser = users.find(u => u.isLocal && u.isScreenShare);
-    if (screenUser && channelRef.current) {
-        channelRef.current.postMessage({ type: 'LEAVE', roomId, userId: screenUser.id });
-    }
-
-    setUsers(prev => prev.filter(u => u.id !== 'local-screen'));
+    setUsers(prev => prev.filter(u => u.id !== `${selfId}-screen`));
     
-    if (focusedUserId === 'local-screen') {
+    if (focusedUserId === `${selfId}-screen`) {
       setFocusedUserId(null);
+    }
+    
+    // Broadcast update that screen share is gone (payload.screenStreamId will be null)
+    if (sendUpdateRef.current) {
+         const me = usersRef.current.find(u => u.isLocal && !u.isScreenShare);
+         if (me) {
+             const payload = {
+                 user: serializeUser(me),
+                 cameraStreamId: localStream?.id,
+                 screenStreamId: null
+             };
+             sendUpdateRef.current(payload);
+         }
     }
   };
 
@@ -372,9 +475,14 @@ const App: React.FC = () => {
         stream.getVideoTracks()[0].onended = () => {
           stopScreenShare();
         };
+        
+        // Add stream to WebRTC room
+        if (roomRef.current) {
+            roomRef.current.addStream(stream);
+        }
 
         const screenUser: User = {
-          id: `screen-${Date.now()}`,
+          id: `${selfId}-screen`,
           name: `${userName}'s Screen`,
           avatarUrl: '', 
           isSpeaking: false,
@@ -389,15 +497,23 @@ const App: React.FC = () => {
         setUsers(prev => [...prev, screenUser]);
         setFocusedUserId(screenUser.id);
         
-        // Broadcast presence of screen share
-        if (channelRef.current) {
-            channelRef.current.postMessage({ type: 'JOIN', roomId, user: serializeUser(screenUser) });
+        // Broadcast update
+        if (sendUpdateRef.current) {
+             const me = usersRef.current.find(u => u.isLocal && !u.isScreenShare);
+             if (me) {
+                 const payload = {
+                     user: serializeUser(me),
+                     cameraStreamId: localStream?.id,
+                     screenStreamId: stream.id
+                 };
+                 sendUpdateRef.current(payload);
+             }
         }
         
       } catch (err: any) {
         console.error("Error sharing screen:", err);
         if (err.name !== 'NotAllowedError') {
-             alert("Unable to share screen. This feature may not be supported in this environment.");
+             alert("Unable to share screen.");
         }
       }
     }
@@ -447,9 +563,8 @@ const App: React.FC = () => {
               return u;
           });
           
-          // Broadcast the new item list
           const me = nextState.find(u => u.isLocal && !u.isScreenShare);
-          if (me && channelRef.current) {
+          if (me) {
                broadcastUpdate({ deskItems: me.deskItems });
           }
           return nextState;
@@ -469,7 +584,7 @@ const App: React.FC = () => {
           });
 
           const me = nextState.find(u => u.id === userId);
-          if (me && channelRef.current) {
+          if (me) {
               broadcastUpdate({ deskItems: me.deskItems });
           }
           return nextState;
@@ -489,7 +604,7 @@ const App: React.FC = () => {
           });
           
           const me = nextState.find(u => u.id === userId);
-          if (me && channelRef.current) {
+          if (me) {
               broadcastUpdate({ deskItems: me.deskItems });
           }
           return nextState;
@@ -599,7 +714,7 @@ const App: React.FC = () => {
         {/* Room Title */}
         <div className="absolute top-6 right-6 md:left-1/2 md:-translate-x-1/2 md:right-auto z-40 bg-white/30 backdrop-blur-sm px-5 py-2 rounded-full border border-white/40 shadow-sm flex items-center gap-4 transition-all hover:bg-white/50">
              <h2 className="text-slate-700 font-bold flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'}`} />
                 {roomId || "Lofi Room"}
              </h2>
 

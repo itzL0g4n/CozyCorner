@@ -9,6 +9,9 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
+      // Polyfill global for WebRTC libraries that expect it
+      window.global = window;
+      
       tailwind.config = {
         theme: {
           extend: {
@@ -55,7 +58,10 @@
     "framer-motion": "https://aistudiocdn.com/framer-motion@^12.23.25",
     "@google/genai": "https://aistudiocdn.com/@google/genai@^1.31.0",
     "vite": "https://aistudiocdn.com/vite@^7.2.6",
-    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1"
+    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1",
+    "trystero": "https://esm.sh/trystero@0.22.0",
+    "trystero/torrent": "https://esm.sh/trystero@0.22.0/torrent",
+    "trystero/": "https://aistudiocdn.com/trystero@^0.22.0/"
   }
 }
 </script>
