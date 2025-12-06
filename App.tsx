@@ -14,6 +14,16 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Users, ArrowRight, Loader2, Sparkles } from 'lucide-react';
 import { joinRoom, selfId } from 'trystero/torrent';
 
+// Robust ICE Servers (STUN) for NAT Traversal
+const RTC_CONFIG = {
+  iceServers: [
+    { urls: ['stun:stun.l.google.com:19302'] },
+    { urls: ['stun:global.stun.twilio.com:3478'] },
+    { urls: ['stun:stun1.l.google.com:19302'] },
+    { urls: ['stun:stun2.l.google.com:19302'] }
+  ]
+};
+
 // Helper to strip non-serializable data (streams) before broadcasting
 const serializeUser = (user: User): Omit<User, 'stream'> => {
   const { stream, ...rest } = user;
@@ -161,23 +171,37 @@ const App: React.FC = () => {
     setIsLoading(true);
     setError('');
 
+    let stream: MediaStream | null = null;
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true
-      });
+      // 1. Get Media Stream First
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true
+        });
+        setLocalStream(stream);
+      } catch (mediaErr: any) {
+        console.error("Media Error:", mediaErr);
+        if (mediaErr.name === 'NotAllowedError' || mediaErr.name === 'PermissionDeniedError') {
+           throw new Error("Camera/Microphone permissions are required.");
+        }
+        throw new Error("Could not access camera/microphone.");
+      }
 
-      setLocalStream(stream);
-
-      // Initialize Trystero
-      const room = joinRoom({ appId: 'cozy-corner-live-v1' }, roomId);
+      // 2. Initialize Trystero
+      // Pass rtcConfig for better stability
+      const room = joinRoom({ 
+          appId: 'cozy-corner-live-v1',
+          rtcConfig: RTC_CONFIG
+      }, roomId);
+      
       roomRef.current = room;
 
       const [sendUpdate, getUpdate] = room.makeAction<any>('presence');
       sendUpdateRef.current = sendUpdate;
 
-      // IMMEDIATE STREAM ADDITION
-      // Add stream once upon joining. Trystero handles sharing with new/existing peers.
+      // 3. Add Stream Immediately
       room.addStream(stream);
 
       const localUser: User = {
@@ -196,15 +220,7 @@ const App: React.FC = () => {
       setUsers([localUser]);
       setConnected(true);
 
-      // IMMEDIATE PRESENCE BROADCAST
-      // Don't wait for ref updates or intervals. Announce "I am here" immediately.
-      sendUpdate({
-          user: serializeUser(localUser),
-          cameraStreamId: stream.id,
-          screenStreamId: null
-      });
-      
-      // Update URL
+      // 4. Update URL
       try {
         const newUrl = new URL(window.location.href);
         newUrl.searchParams.set('room', roomId);
@@ -217,7 +233,7 @@ const App: React.FC = () => {
 
       // --- Trystero Event Listeners ---
 
-      // 1. Handle incoming state updates
+      // A. Handle incoming state updates (Presence)
       getUpdate((payload, peerId) => {
           setUsers(prev => {
               const existingUserIndex = prev.findIndex(u => u.id === peerId);
@@ -258,13 +274,13 @@ const App: React.FC = () => {
 
                   return newUsers;
               } else {
-                  // New User Found via Data
+                  // New User Found via Data (before stream)
                   return [...prev, { ...incomingUser, id: peerId, isLocal: false }];
               }
           });
       });
 
-      // 2. Handle Peer Joining (Send them my state)
+      // B. Handle Peer Joining (Handshake)
       room.onPeerJoin((peerId: string) => {
           console.log("Peer joined:", peerId);
           
@@ -272,31 +288,33 @@ const App: React.FC = () => {
              room.addStream(screenStream);
           }
           
-          // Broadcast my state explicitly to this peer (and everyone else to be safe)
+          // CRITICAL: Broadcast my state explicitly to this peer immediately
+          // This ensures they know who we are as soon as the data channel opens
           const me = usersRef.current.find(u => u.isLocal && !u.isScreenShare);
           if (me) {
               const payload = {
                   user: serializeUser(me),
-                  cameraStreamId: stream.id,
+                  cameraStreamId: stream?.id,
                   screenStreamId: screenStream?.id
               };
               sendUpdate(payload);
           }
       });
 
-      // 3. Handle Peer Leaving
+      // C. Handle Peer Leaving
       room.onPeerLeave((peerId: string) => {
           console.log("Peer left:", peerId);
           setUsers(prev => prev.filter(u => u.id !== peerId && u.id !== `${peerId}-screen`));
       });
 
-      // 4. Handle Incoming Streams
+      // D. Handle Incoming Streams (Video/Audio)
       room.onPeerStream((remoteStream: MediaStream, peerId: string) => {
           console.log("Received stream from:", peerId, remoteStream.id);
           
           setUsers(prev => {
               const userIndex = prev.findIndex(u => u.id === peerId);
               if (userIndex === -1) {
+                   // Received stream before presence data
                    return [...prev, {
                       id: peerId,
                       name: 'Connecting...',
@@ -318,6 +336,7 @@ const App: React.FC = () => {
                   return newUsers;
               }
               
+              // Check if this is a secondary stream (Screen Share)
               if (user.stream.id !== remoteStream.id) {
                    const screenId = `${peerId}-screen`;
                    const screenIndex = prev.findIndex(u => u.id === screenId);
@@ -347,15 +366,20 @@ const App: React.FC = () => {
       });
 
     } catch (err: any) {
-      console.error("Error accessing media devices or connecting:", err);
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setError("Camera/Microphone access denied. Please allow permissions to join.");
-      } else {
-        setError("Could not connect. Please check your network.");
+      console.error("Connection Error:", err);
+      // Clean up stream if connection failed
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        setLocalStream(null);
       }
+      
+      setError(err.message || "Connection failed. Please check your network and try again.");
       setIsLoading(false);
     } finally {
-      setIsLoading(false);
+      // Don't set isLoading(false) here if connected, only on error
+      if (!connected) {
+         // If we successfully connected, loading state is handled by UI switch
+      }
     }
   };
 
@@ -387,6 +411,7 @@ const App: React.FC = () => {
     setIsScreenSharing(false);
     setFocusedUserId(null);
     setShowDecorations(false);
+    setIsLoading(false);
     
     const newUrl = new URL(window.location.href);
     newUrl.searchParams.delete('room');
