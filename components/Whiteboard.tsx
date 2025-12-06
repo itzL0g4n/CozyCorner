@@ -134,9 +134,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
         const el = elements.find(e => e.id === selectedId);
         if (el) {
             // We are dragging an element
-            // We do optimistic updates locally? Or just blocking updates.
-            // For smooth React rendering, we might want to update a local "draggedElementState"
-            // But updating main state is easier for code simplicity.
             onUpdate({ 
                 type: 'UPDATE', 
                 data: { ...el, x: x - dragOffset.x, y: y - dragOffset.y } 
@@ -178,24 +175,28 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
     setIsDrawing(false);
 
     if (currentElement) {
-        // Normalize geometry for shapes
         let finalElement = { ...currentElement };
-        if (['rect', 'circle', 'line', 'arrow'].includes(finalElement.type)) {
-                // If drawn backwards (negative width/height), flip coords
-                if ((finalElement.width || 0) < 0) {
-                    finalElement.x += finalElement.width!;
-                    finalElement.width = Math.abs(finalElement.width!);
-                }
-                if ((finalElement.height || 0) < 0) {
-                    finalElement.y += finalElement.height!;
-                    finalElement.height = Math.abs(finalElement.height!);
-                }
-                
-                // Prevent tiny accidental clicks creating invisible shapes
-                if ((finalElement.width || 0) < 5 && (finalElement.height || 0) < 5) {
-                    setCurrentElement(null);
-                    return;
-                }
+
+        // 1. Normalize Rect and Circle only (ensure positive width/height)
+        // We do NOT normalize Line or Arrow, because negative width/height implies direction (Right-to-Left / Bottom-to-Top)
+        if (['rect', 'circle'].includes(finalElement.type)) {
+            if ((finalElement.width || 0) < 0) {
+                finalElement.x += finalElement.width!;
+                finalElement.width = Math.abs(finalElement.width!);
+            }
+            if ((finalElement.height || 0) < 0) {
+                finalElement.y += finalElement.height!;
+                finalElement.height = Math.abs(finalElement.height!);
+            }
+        }
+        
+        // 2. Validate Size (Prevent tiny invisible specks)
+        if (finalElement.type !== 'path' && finalElement.type !== 'text') {
+             // Use Math.abs because Line/Arrow might have negative dimensions validly
+             if (Math.abs(finalElement.width || 0) < 5 && Math.abs(finalElement.height || 0) < 5) {
+                 setCurrentElement(null);
+                 return;
+             }
         } else if (finalElement.type === 'path') {
              if ((finalElement.points?.length || 0) < 2) {
                  setCurrentElement(null);
@@ -279,7 +280,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
              transform: `rotate(${el.rotation}deg)`,
              pointerEvents: isPreview ? 'none' : 'visiblePainted', // Ensure we can click stroke
              cursor: tool === 'select' ? 'move' : tool === 'eraser' ? 'crosshair' : 'default'
-          } as any // Use any to bypass strict React CSSProperties check for SVG props
+          } as any 
       };
 
       let content;
@@ -302,9 +303,18 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
               content = <line x1={el.x} y1={el.y} x2={el.x + (el.width || 0)} y2={el.y + (el.height || 0)} {...commonProps} />;
               break;
           case 'arrow':
+              // Use specific marker color
+              const markerId = `url(#arrowhead-${el.stroke.replace('#', '')})`;
               content = (
                   <g>
-                    <line x1={el.x} y1={el.y} x2={el.x + (el.width || 0)} y2={el.y + (el.height || 0)} {...commonProps} markerEnd="url(#arrowhead)" />
+                    <line 
+                        x1={el.x} 
+                        y1={el.y} 
+                        x2={el.x + (el.width || 0)} 
+                        y2={el.y + (el.height || 0)} 
+                        {...commonProps} 
+                        markerEnd={markerId} 
+                    />
                   </g>
               );
               break;
@@ -333,6 +343,17 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
           default:
               return null;
       }
+      
+      // Calculate Bounding Box for Selection Indicator (Handle negative width/height for lines/arrows)
+      let selX = el.x;
+      let selY = el.y;
+      let selW = el.width || 0;
+      let selH = el.height || 0;
+
+      if (['line', 'arrow'].includes(el.type)) {
+          if (selW < 0) { selX += selW; selW = Math.abs(selW); }
+          if (selH < 0) { selY += selH; selH = Math.abs(selH); }
+      }
 
       return (
           <g 
@@ -351,10 +372,10 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
               
               {isSelected && (
                   <rect 
-                    x={el.type === 'path' ? 0 : el.x - 4} 
-                    y={el.type === 'path' ? 0 : el.y - 4} 
-                    width={(el.width || 0) + 8} 
-                    height={(el.height || 0) + 8} 
+                    x={el.type === 'path' ? 0 : selX - 4} 
+                    y={el.type === 'path' ? 0 : selY - 4} 
+                    width={el.type === 'path' ? 0 : selW + 8} 
+                    height={el.type === 'path' ? 0 : selH + 8} 
                     fill="none" 
                     stroke="#3b82f6" 
                     strokeWidth={1} 
@@ -485,9 +506,20 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
         onPointerLeave={handlePointerUp} // End drag if leaving canvas
       >
         <defs>
-            <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-                <polygon points="0 0, 10 3.5, 0 7" fill={color} />
-            </marker>
+            {/* Generate marker for each color to support multicolored arrows */}
+            {COLORS.map(c => (
+                <marker 
+                    key={c} 
+                    id={`arrowhead-${c.replace('#', '')}`} 
+                    markerWidth="10" 
+                    markerHeight="7" 
+                    refX="9" 
+                    refY="3.5" 
+                    orient="auto"
+                >
+                    <polygon points="0 0, 10 3.5, 0 7" fill={c} />
+                </marker>
+            ))}
         </defs>
         
         {elements.map(el => renderElement(el))}
