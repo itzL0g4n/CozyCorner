@@ -1,16 +1,27 @@
 import { LucideIcon } from 'lucide-react';
 
+export type DeskItemType = 'note' | 'plant' | 'coffee' | 'pet';
+
+export interface DeskItem {
+  id: string;
+  type: DeskItemType;
+  x: number; // percentage 0-100
+  y: number; // percentage 0-100
+  data?: any; // text for note, state for pet, etc.
+}
+
 export interface User {
   id: string;
   name: string;
   avatarUrl: string;
   isSpeaking: boolean;
   isMuted: boolean;
-  isVideoOff?: boolean; // Track if camera is toggled off
-  isScreenShare?: boolean; // Track if this is a screen share feed
+  isVideoOff?: boolean;
+  isScreenShare?: boolean;
   color: string;
-  stream?: MediaStream; // The real video/audio stream
-  isLocal?: boolean;    // Is this the current user?
+  stream?: MediaStream;
+  isLocal?: boolean;
+  deskItems?: DeskItem[]; // Interactive items on their feed
 }
 
 export interface DockItem {
@@ -24,8 +35,8 @@ export interface DockItem {
 export interface Decoration {
   id: string;
   emoji: string;
-  x: number; // percentage
-  y: number; // percentage
+  x: number;
+  y: number;
   scale: number;
   delay: number;
 }

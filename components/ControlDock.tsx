@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Mic, MicOff, Video, VideoOff, Monitor, MonitorOff, Coffee, PhoneOff, Music, Sparkles
+  Mic, MicOff, Video, VideoOff, Monitor, MonitorOff, Coffee, PhoneOff, Music, Sparkles, LayoutGrid
 } from 'lucide-react';
 import { DockItem } from '../types';
 
@@ -10,9 +10,11 @@ interface ControlDockProps {
   toggleMusic: () => void;
   toggleStudyBuddy: () => void;
   toggleTimer: () => void;
+  toggleDecorations: () => void; // New toggle
   isMusicOpen: boolean;
   isStudyBuddyOpen: boolean;
   isTimerOpen: boolean;
+  isDecorationsOpen: boolean; // New state
   
   // Media Controls
   isMicOn: boolean;
@@ -28,9 +30,11 @@ export const ControlDock: React.FC<ControlDockProps> = ({
   toggleMusic, 
   toggleStudyBuddy,
   toggleTimer,
+  toggleDecorations,
   isMusicOpen,
   isStudyBuddyOpen,
   isTimerOpen,
+  isDecorationsOpen,
   isMicOn,
   isCameraOn,
   isScreenSharing,
@@ -46,7 +50,7 @@ export const ControlDock: React.FC<ControlDockProps> = ({
       label: isMicOn ? 'Mute' : 'Unmute', 
       icon: isMicOn ? Mic : MicOff,
       action: onToggleMic,
-      isActive: !isMicOn // Highlight if muted (or invert based on pref) - usually clear = on
+      isActive: !isMicOn
     },
     { 
       id: 'camera', 
@@ -68,6 +72,13 @@ export const ControlDock: React.FC<ControlDockProps> = ({
       icon: Sparkles,
       action: toggleStudyBuddy,
       isActive: isStudyBuddyOpen
+    },
+    { 
+      id: 'decorate',
+      label: isDecorationsOpen ? 'Close Desk' : 'Decorate Desk',
+      icon: LayoutGrid, // Icon for items/grid
+      action: toggleDecorations,
+      isActive: isDecorationsOpen
     },
     { 
       id: 'share', 

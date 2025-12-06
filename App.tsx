@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { BackgroundWrapper } from './components/BackgroundWrapper';
 import { VideoGrid } from './components/VideoGrid';
@@ -6,8 +7,10 @@ import { FloatyDecorations } from './components/FloatyDecorations';
 import { PomodoroTimer } from './components/PomodoroTimer';
 import { MusicPlayer } from './components/MusicPlayer';
 import { StudyBuddy } from './components/StudyBuddy';
+import { ItemPalette } from './components/ItemPalette';
+import { DraggableDeskItem } from './components/DeskItems';
 import { MOCK_USERS } from './constants';
-import { User } from './types';
+import { User, DeskItem, DeskItemType } from './types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Users, ArrowRight, Loader2, Sparkles, Plus } from 'lucide-react';
 
@@ -16,6 +19,7 @@ const App: React.FC = () => {
   const [showMusic, setShowMusic] = useState(false);
   const [showStudyBuddy, setShowStudyBuddy] = useState(false);
   const [showTimer, setShowTimer] = useState(true);
+  const [showDecorations, setShowDecorations] = useState(false);
   
   // Logic State
   const [roomId, setRoomId] = useState('');
@@ -50,6 +54,71 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // Audio Level Detection for Visualizer
+  useEffect(() => {
+    if (!localStream || !connected) return;
+
+    let audioContext: AudioContext | null = null;
+    let microphone: MediaStreamAudioSourceNode | null = null;
+    let analyser: AnalyserNode | null = null;
+    let animationFrameId: number;
+    let wasSpeaking = false;
+
+    try {
+      audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      analyser = audioContext.createAnalyser();
+      microphone = audioContext.createMediaStreamSource(localStream);
+      microphone.connect(analyser);
+
+      analyser.fftSize = 256;
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      const checkAudioLevel = () => {
+        if (!isMicOn) {
+          if (wasSpeaking) {
+             wasSpeaking = false;
+             setUsers(prev => prev.map(u => u.isLocal && !u.isScreenShare ? { ...u, isSpeaking: false } : u));
+          }
+          animationFrameId = requestAnimationFrame(checkAudioLevel);
+          return;
+        }
+
+        if (analyser) {
+          analyser.getByteFrequencyData(dataArray);
+          
+          // Calculate average volume
+          let sum = 0;
+          for (let i = 0; i < dataArray.length; i++) {
+            sum += dataArray[i];
+          }
+          const average = sum / dataArray.length;
+          
+          // Threshold for "speaking" - Increased to 25 to reduce background noise sensitivity
+          const isSpeaking = average > 25; 
+
+          if (isSpeaking !== wasSpeaking) {
+            wasSpeaking = isSpeaking;
+            setUsers(prev => prev.map(u => u.isLocal && !u.isScreenShare ? { ...u, isSpeaking } : u));
+          }
+        }
+        
+        animationFrameId = requestAnimationFrame(checkAudioLevel);
+      };
+
+      checkAudioLevel();
+
+    } catch (err) {
+      console.error("Error initializing audio context:", err);
+    }
+
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+      if (microphone) microphone.disconnect();
+      if (audioContext && audioContext.state !== 'closed') audioContext.close();
+    };
+  }, [localStream, isMicOn, connected]);
+
+
   // Handle Join Room
   const handleConnect = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,7 +147,8 @@ const App: React.FC = () => {
         isVideoOff: false,
         color: 'bg-purple-200',
         stream: stream,
-        isLocal: true
+        isLocal: true,
+        deskItems: [] // Start empty
       };
 
       // 3. Merge with mock users (Now empty, so just me)
@@ -143,6 +213,7 @@ const App: React.FC = () => {
     setIsCameraOn(true);
     setIsScreenSharing(false);
     setFocusedUserId(null);
+    setShowDecorations(false);
   };
 
   const toggleMic = () => {
@@ -228,13 +299,81 @@ const App: React.FC = () => {
         
       } catch (err: any) {
         console.error("Error sharing screen:", err);
-        if (err.name === 'NotAllowedError') {
-             alert("Screen sharing was cancelled or denied. Please check your browser permissions.");
-        } else {
+        // Don't show alert if user simply cancelled the dialog
+        if (err.name !== 'NotAllowedError') {
              alert("Unable to share screen. This feature may not be supported in this environment.");
         }
       }
     }
+  };
+
+  // --- Desk Item Logic ---
+
+  const handleAddDeskItem = (type: DeskItemType) => {
+      let initialData: any = '';
+      
+      if (type === 'plant') {
+        const variants = [
+          "https://media.tenor.com/m38BFcQuk0gAAAAi/plant.gif",
+          "https://media.tenor.com/xnqIJK2U_oAAAAAi/manidhaya.gif",
+          "https://i.pinimg.com/originals/d1/ba/af/d1baaf55865461e4fd5079ae7d80863f.gif"
+        ];
+        initialData = variants[Math.floor(Math.random() * variants.length)];
+      } else if (type === 'coffee') {
+        const variants = [
+            "https://i.pinimg.com/originals/33/a5/d5/33a5d563b09c60db33a18a6be523c8a6.gif",
+            "https://i.pinimg.com/originals/f0/4b/a9/f04ba908d1744c429505ac5239c35e63.gif",
+            "https://i.pinimg.com/originals/e9/26/16/e9261611196ebd98b2d76ab0627699a0.gif"
+        ];
+        initialData = variants[Math.floor(Math.random() * variants.length)];
+      } else if (type === 'pet') {
+         const variants = [
+            "https://media.tenor.com/1YELlhf9ORsAAAAi/waal-boyss-nabilaa.gif",
+            "https://i.pinimg.com/originals/e0/71/d5/e071d539ee95b7dcd5c15bee8d0653ad.gif",
+            "https://i.pinimg.com/originals/04/86/9e/04869e09851353129379e535502d87e4.gif"
+         ];
+         initialData = variants[Math.floor(Math.random() * variants.length)];
+      }
+
+      const newItem: DeskItem = {
+          id: Date.now().toString(),
+          type,
+          x: 40 + (Math.random() * 20), // Center-ish random screen coords
+          y: 40 + (Math.random() * 20),
+          data: initialData
+      };
+
+      setUsers(prev => prev.map(u => {
+          if (u.isLocal && !u.isScreenShare) {
+              return { ...u, deskItems: [...(u.deskItems || []), newItem] };
+          }
+          return u;
+      }));
+  };
+
+  const handleUpdateDeskItem = (userId: string, itemId: string, data: any) => {
+      // Only allow updating if it's the local user
+      setUsers(prev => prev.map(u => {
+          if (u.id === userId && u.isLocal) {
+              return {
+                  ...u,
+                  deskItems: u.deskItems?.map(item => item.id === itemId ? { ...item, data } : item)
+              };
+          }
+          return u;
+      }));
+  };
+
+  const handleRemoveDeskItem = (userId: string, itemId: string) => {
+     setUsers(prev => prev.map(u => {
+          if (u.id === userId && u.isLocal) {
+              return {
+                  ...u,
+                  deskItems: u.deskItems?.filter(item => item.id !== itemId)
+              };
+          }
+          return u;
+     }));
   };
 
   // Login Screen
@@ -365,6 +504,26 @@ const App: React.FC = () => {
         {/* Ambient Decorations */}
         <FloatyDecorations />
 
+        {/* Global Desk Items Layer - Renders above video but below modals/dock */}
+        <div className="absolute inset-0 z-20 pointer-events-none overflow-hidden">
+             <AnimatePresence>
+                {users.flatMap(user => 
+                   (user.deskItems || []).map(item => (
+                       <DraggableDeskItem
+                          key={item.id}
+                          item={item}
+                          // Only allow editing own items (excluding screen shares)
+                          isEditable={!!user.isLocal && !user.isScreenShare}
+                          // Since items are global, containerRef is undefined to allow full screen dragging
+                          containerRef={undefined} 
+                          onUpdate={(id, data) => handleUpdateDeskItem(user.id, id, data)}
+                          onRemove={(id) => handleRemoveDeskItem(user.id, id)}
+                       />
+                   ))
+                )}
+             </AnimatePresence>
+        </div>
+
         {/* Floating Widgets */}
         <AnimatePresence>
             {showMusic && <MusicPlayer onClose={() => setShowMusic(false)} />}
@@ -372,9 +531,19 @@ const App: React.FC = () => {
         <AnimatePresence>
             {showStudyBuddy && <StudyBuddy onClose={() => setShowStudyBuddy(false)} />}
         </AnimatePresence>
+        
+        {/* Item Palette */}
+        <AnimatePresence>
+            {showDecorations && (
+                <ItemPalette 
+                    onClose={() => setShowDecorations(false)}
+                    onSelect={handleAddDeskItem}
+                />
+            )}
+        </AnimatePresence>
 
         {/* Main Content Area */}
-        <div className="flex-1 flex flex-col relative z-10 overflow-hidden pb-32 pt-20">
+        <div className={`flex-1 flex flex-col relative z-10 overflow-hidden transition-all duration-500 ${focusedUserId ? 'pt-14 pb-0' : 'pt-20 pb-32'}`}>
           <VideoGrid 
             users={users} 
             focusedUserId={focusedUserId}
@@ -388,9 +557,11 @@ const App: React.FC = () => {
             toggleMusic={() => setShowMusic(!showMusic)}
             toggleStudyBuddy={() => setShowStudyBuddy(!showStudyBuddy)}
             toggleTimer={() => setShowTimer(!showTimer)}
+            toggleDecorations={() => setShowDecorations(!showDecorations)}
             isMusicOpen={showMusic}
             isStudyBuddyOpen={showStudyBuddy}
             isTimerOpen={showTimer}
+            isDecorationsOpen={showDecorations}
             isMicOn={isMicOn}
             isCameraOn={isCameraOn}
             isScreenSharing={isScreenSharing}
