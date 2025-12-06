@@ -24,14 +24,11 @@ const RTC_CONFIG = {
   ]
 };
 
-// Robust Tracker List for Signaling Stability
+// Simplified, High-Uptime Trackers to prevent partitioning
 const TRACKER_URLS = [
   'wss://tracker.webtorrent.io',
   'wss://tracker.openwebtorrent.com',
-  'wss://tracker.files.fm:7073/announce',
   'wss://tracker.btorrent.xyz',
-  'wss://tracker.nanoha.org',
-  'wss://tracker.sloppyta.co:80/announce',
 ];
 
 // Helper to strip non-serializable data (streams) before broadcasting
@@ -71,6 +68,8 @@ const App: React.FC = () => {
   const sendUpdateRef = useRef<any>(null);
   const usersRef = useRef<User[]>([]);
   const screenStreamRef = useRef<MediaStream | null>(null);
+  const heartbeatRef = useRef<any>(null);
+  const pendingLeavesRef = useRef<Map<string, any>>(new Map());
 
   // Keep ref synced with state for event listeners
   useEffect(() => {
@@ -92,6 +91,10 @@ const App: React.FC = () => {
     } catch (e) {
       console.warn("Could not read URL parameters", e);
     }
+    
+    return () => {
+        if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+    };
   }, []);
 
   // Audio Level Detection for Visualizer
@@ -165,24 +168,18 @@ const App: React.FC = () => {
       if (sendUpdateRef.current) {
           const me = usersRef.current.find(u => u.isLocal && !u.isScreenShare);
           if (me) {
-              // We send the FULL user object + changes to ensure sync, 
-              // but we strip the stream object
               const updatedMe = { ...me, ...changes };
-              
-              // If we are sharing screen, we also need to send the screen share info
-              // The update payload can contain extra metadata about streams
               const payload = {
                   user: serializeUser(updatedMe),
                   screenStreamId: screenStreamRef.current ? screenStreamRef.current.id : null,
-                  cameraStreamId: localStream ? localStream.id : null
+                  cameraStreamId: localStream ? localStream.id : null,
+                  timestamp: Date.now()
               };
-              
               sendUpdateRef.current(payload);
           }
       }
   };
 
-  // Handle Join Room
   const handleConnect = async (e: React.FormEvent) => {
     e.preventDefault();
     if(!roomId.trim() || !userName.trim()) return;
@@ -193,11 +190,10 @@ const App: React.FC = () => {
     let stream: MediaStream | null = null;
 
     try {
-      // 1. Get Media Stream First
-      // Requesting specific resolution (480p) helps stability in P2P mesh
+      // 1. Get Media Stream
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { height: 480, frameRate: 24 },
+          video: { height: 360, frameRate: 24 }, // Lower res for better mesh stability
           audio: { echoCancellation: true, noiseSuppression: true }
         });
         setLocalStream(stream);
@@ -210,7 +206,6 @@ const App: React.FC = () => {
       }
 
       // 2. Initialize Trystero
-      // Pass rtcConfig and explicit trackerUrls for stability
       const room = joinRoom({ 
           appId: 'cozy-corner-live-v1',
           rtcConfig: RTC_CONFIG,
@@ -222,11 +217,11 @@ const App: React.FC = () => {
       const [sendUpdate, getUpdate] = room.makeAction<any>('presence');
       sendUpdateRef.current = sendUpdate;
 
-      // 3. Add Stream Immediately (Broadcast to all current/future)
+      // 3. Add Stream Immediately (Broadcast to all)
       room.addStream(stream);
 
       const localUser: User = {
-        id: selfId, // Use Trystero selfId as our main ID
+        id: selfId, 
         name: userName,
         avatarUrl: `https://api.dicebear.com/7.x/notionists/svg?seed=${userName}`,
         isSpeaking: false,
@@ -240,6 +235,11 @@ const App: React.FC = () => {
 
       setUsers([localUser]);
       setConnected(true);
+
+      // Start Heartbeat
+      heartbeatRef.current = setInterval(() => {
+         broadcastUpdate({}); 
+      }, 3000); // Send presence every 3 seconds
 
       // 4. Update URL
       try {
@@ -256,11 +256,16 @@ const App: React.FC = () => {
 
       // A. Handle incoming state updates (Presence)
       getUpdate((payload, peerId) => {
+          // If this peer was pending leave, cancel it (they are back/stable)
+          if (pendingLeavesRef.current.has(peerId)) {
+              clearTimeout(pendingLeavesRef.current.get(peerId)!);
+              pendingLeavesRef.current.delete(peerId);
+          }
+
           setUsers(prev => {
               const existingUserIndex = prev.findIndex(u => u.id === peerId);
               const incomingUser = payload.user;
 
-              // Handle Main User
               if (existingUserIndex !== -1) {
                   // Update existing
                   const newUsers = [...prev];
@@ -268,11 +273,11 @@ const App: React.FC = () => {
                       ...newUsers[existingUserIndex],
                       ...incomingUser,
                       isLocal: false,
-                      // Preserve the stream if we already have it
+                      // CRITICAL: Preserve the stream!
                       stream: newUsers[existingUserIndex].stream
                   };
                   
-                  // Handle Screen Share Phantom User
+                  // Handle Screen Share Phantom
                   const screenId = `${peerId}-screen`;
                   const hasScreen = !!payload.screenStreamId;
                   const existingScreenIndex = prev.findIndex(u => u.id === screenId);
@@ -295,7 +300,7 @@ const App: React.FC = () => {
 
                   return newUsers;
               } else {
-                  // New User Found via Data (before stream)
+                  // New User Found via Data
                   return [...prev, { ...incomingUser, id: peerId, isLocal: false }];
               }
           });
@@ -305,8 +310,8 @@ const App: React.FC = () => {
       room.onPeerJoin((peerId: string) => {
           console.log("Peer joined:", peerId);
           
-          // CRITICAL FIX: Explicitly add stream to the new peer to ensure they receive it.
-          // This fixes the issue where the second user only sees a picture (avatar) but no video.
+          // CRITICAL: Force add stream to THIS specific peer.
+          // This ensures if they missed the initial broadcast, they get it now.
           if (stream) {
             console.log("Offering local stream to:", peerId);
             room.addStream(stream, peerId);
@@ -317,33 +322,33 @@ const App: React.FC = () => {
              room.addStream(screenStreamRef.current, peerId);
           }
           
-          // Broadcast my state explicitly to this peer immediately
-          const me = usersRef.current.find(u => u.isLocal && !u.isScreenShare);
-          if (me) {
-              const payload = {
-                  user: serializeUser(me),
-                  cameraStreamId: stream?.id,
-                  screenStreamId: screenStreamRef.current?.id
-              };
-              // Small delay to ensure data channel is ready
-              setTimeout(() => sendUpdate(payload), 500);
-          }
+          // Send immediate presence to this peer
+          setTimeout(() => broadcastUpdate({}), 500);
       });
 
-      // C. Handle Peer Leaving
+      // C. Handle Peer Leaving (Debounced)
       room.onPeerLeave((peerId: string) => {
-          console.log("Peer left:", peerId);
-          setUsers(prev => prev.filter(u => u.id !== peerId && u.id !== `${peerId}-screen`));
+          console.log("Peer left signal:", peerId);
+          
+          // Don't remove immediately, wait 5s to see if it's just a flicker
+          const timeoutId = setTimeout(() => {
+             console.log("Peer actually removed:", peerId);
+             setUsers(prev => prev.filter(u => u.id !== peerId && u.id !== `${peerId}-screen`));
+             pendingLeavesRef.current.delete(peerId);
+          }, 5000);
+
+          pendingLeavesRef.current.set(peerId, timeoutId);
       });
 
-      // D. Handle Incoming Streams (Video/Audio)
+      // D. Handle Incoming Streams
       room.onPeerStream((remoteStream: MediaStream, peerId: string) => {
           console.log("Received stream from:", peerId, remoteStream.id);
           
           setUsers(prev => {
               const userIndex = prev.findIndex(u => u.id === peerId);
+              
               if (userIndex === -1) {
-                   // Received stream before presence data
+                   // If we get stream before presence data, create a temporary placeholder
                    return [...prev, {
                       id: peerId,
                       name: 'Connecting...',
@@ -359,81 +364,68 @@ const App: React.FC = () => {
 
               const user = prev[userIndex];
               
-              if (!user.stream) {
+              // If it's the main stream (we guess by checking if we already have one, or simple assignment)
+              // NOTE: Trystero doesn't easily distinguish stream IDs without metadata.
+              // We rely on the order or if the user already has a stream.
+              
+              if (!user.stream || user.stream.id === remoteStream.id) {
                   const newUsers = [...prev];
                   newUsers[userIndex] = { ...user, stream: remoteStream };
                   return newUsers;
               }
               
-              // Check if this is a secondary stream (Screen Share)
-              if (user.stream.id !== remoteStream.id) {
-                   const screenId = `${peerId}-screen`;
-                   const screenIndex = prev.findIndex(u => u.id === screenId);
-                   
-                   if (screenIndex !== -1) {
-                       const newUsers = [...prev];
-                       newUsers[screenIndex] = { ...newUsers[screenIndex], stream: remoteStream };
-                       return newUsers;
-                   } else {
-                       return [...prev, {
-                          id: screenId,
-                          name: `${user.name}'s Screen`,
-                          avatarUrl: '',
-                          isSpeaking: false,
-                          isMuted: true,
-                          isVideoOff: false,
-                          isScreenShare: true,
-                          color: 'bg-blue-100',
-                          stream: remoteStream,
-                          isLocal: false
-                       }];
-                   }
+              // Check if it's likely a screen share (secondary stream)
+              const screenId = `${peerId}-screen`;
+              const screenIndex = prev.findIndex(u => u.id === screenId);
+              
+              if (screenIndex !== -1) {
+                  const newUsers = [...prev];
+                  newUsers[screenIndex] = { ...newUsers[screenIndex], stream: remoteStream };
+                  return newUsers;
+              } else {
+                  // New Screen Share Stream found
+                   return [...prev, {
+                      id: screenId,
+                      name: `${user.name}'s Screen`,
+                      avatarUrl: '',
+                      isSpeaking: false,
+                      isMuted: true,
+                      isVideoOff: false,
+                      isScreenShare: true,
+                      color: 'bg-blue-100',
+                      stream: remoteStream,
+                      isLocal: false
+                   }];
               }
-
-              return prev;
           });
       });
 
     } catch (err: any) {
       console.error("Connection Error:", err);
-      // Clean up stream if connection failed
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
         setLocalStream(null);
       }
       
-      // Robust error message extraction to avoid [object Object]
-      let errorMessage = "Connection failed. Please check your network and try again.";
-      if (err?.message) {
-        errorMessage = err.message;
-      } else if (typeof err === 'string') {
-        errorMessage = err;
-      } else if (err && typeof err === 'object') {
-        try {
-            // If it's a weird object without message, try to stringify or fallback
-            const msg = JSON.stringify(err);
-            if (msg !== '{}') errorMessage = msg;
-        } catch (e) {
-            // fallback
-        }
-      }
+      let errorMessage = "Connection failed. Please check your network.";
+      if (err?.message) errorMessage = err.message;
+      else if (typeof err === 'string') errorMessage = err;
       
       setError(errorMessage);
       setIsLoading(false);
-    } finally {
-      if (!connected) {
-         // If we successfully connected, loading state is handled by UI switch
-      }
     }
   };
 
   const createNewRoom = () => {
-    // Generate a 6-digit number string
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     setRoomId(code);
   };
 
   const handleLeave = () => {
+    if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+    pendingLeavesRef.current.forEach(timeout => clearTimeout(timeout));
+    pendingLeavesRef.current.clear();
+
     if (roomRef.current) {
         roomRef.current.leave();
     }
@@ -508,17 +500,8 @@ const App: React.FC = () => {
       setFocusedUserId(null);
     }
     
-    if (sendUpdateRef.current) {
-         const me = usersRef.current.find(u => u.isLocal && !u.isScreenShare);
-         if (me) {
-             const payload = {
-                 user: serializeUser(me),
-                 cameraStreamId: localStream?.id,
-                 screenStreamId: null
-             };
-             sendUpdateRef.current(payload);
-         }
-    }
+    // Broadcast update that screen is gone
+    broadcastUpdate({});
   };
 
   const handleScreenShare = async () => {
@@ -556,13 +539,15 @@ const App: React.FC = () => {
         setUsers(prev => [...prev, screenUser]);
         setFocusedUserId(screenUser.id);
         
+        // Broadcast update with new screen stream ID
         if (sendUpdateRef.current) {
              const me = usersRef.current.find(u => u.isLocal && !u.isScreenShare);
              if (me) {
                  const payload = {
                      user: serializeUser(me),
                      cameraStreamId: localStream?.id,
-                     screenStreamId: stream.id
+                     screenStreamId: stream.id,
+                     timestamp: Date.now()
                  };
                  sendUpdateRef.current(payload);
              }
@@ -606,7 +591,7 @@ const App: React.FC = () => {
       }
 
       const newItem: DeskItem = {
-          id: crypto.randomUUID(), // Use UUID for unique IDs
+          id: crypto.randomUUID(), 
           type,
           x: 40 + (Math.random() * 20), 
           y: 40 + (Math.random() * 20),
@@ -644,7 +629,6 @@ const App: React.FC = () => {
           const newUsers = [...prev];
           newUsers[userIndex] = newUser;
 
-          // Broadcast explicit new list derived from current action
           broadcastUpdate({ deskItems: newDeskItems });
           
           return newUsers;
