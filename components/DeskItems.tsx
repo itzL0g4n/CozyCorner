@@ -1,4 +1,5 @@
-import React, { useState, useRef } from 'react';
+
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Droplets, Heart } from 'lucide-react';
 import { DeskItem } from '../types';
@@ -135,6 +136,25 @@ export const DraggableDeskItem: React.FC<DeskItemProps> = ({
   const [isSelected, setIsSelected] = useState(false);
   const elementRef = useRef<HTMLDivElement>(null);
 
+  // Click Outside to Deselect
+  useEffect(() => {
+    if (!isSelected) return;
+
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (elementRef.current && !elementRef.current.contains(event.target as Node)) {
+        setIsSelected(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [isSelected]);
+
   const handleDragEnd = (event: any, info: any) => {
     if (elementRef.current) {
         const rect = elementRef.current.getBoundingClientRect();
@@ -153,7 +173,7 @@ export const DraggableDeskItem: React.FC<DeskItemProps> = ({
 
   const handleInteraction = () => {
       if (isEditable) {
-          setIsSelected(!isSelected);
+          setIsSelected(true);
       }
   };
 
