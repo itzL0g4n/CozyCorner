@@ -42,7 +42,7 @@ const App: React.FC = () => {
   const [connected, setConnected] = useState(false);
   const [showMusic, setShowMusic] = useState(false);
   const [showStudyBuddy, setShowStudyBuddy] = useState(false);
-  const [showTimer, setShowTimer] = useState(true);
+  const [showTimer, setShowTimer] = useState(false);
   const [showDecorations, setShowDecorations] = useState(false);
   const [showWhiteboard, setShowWhiteboard] = useState(false); // New
   
@@ -277,8 +277,6 @@ const App: React.FC = () => {
       } catch (urlError) {
         console.warn("Could not update URL:", urlError);
       }
-      
-      setTimeout(() => setShowMusic(true), 1000);
 
       // --- Trystero Event Listeners ---
 
@@ -564,7 +562,14 @@ const App: React.FC = () => {
     } else {
       try {
         // @ts-ignore
-        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+        const stream = await navigator.mediaDevices.getDisplayMedia({ 
+            video: true, 
+            audio: {
+                echoCancellation: false, 
+                noiseSuppression: false,
+                autoGainControl: false
+            } 
+        });
         
         setScreenStream(stream);
         setIsScreenSharing(true);
