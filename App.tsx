@@ -614,10 +614,12 @@ const App: React.FC = () => {
         }
         
       } catch (err: any) {
-        console.error("Error sharing screen:", err);
-        if (err.name !== 'NotAllowedError') {
-             alert("Unable to share screen.");
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError' || err.message?.includes('Permission denied')) {
+            console.log("Screen share cancelled by user");
+            return;
         }
+        console.error("Error sharing screen:", err);
+        alert("Unable to share screen: " + (err.message || "Unknown error"));
       }
     }
   };

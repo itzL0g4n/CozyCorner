@@ -38,6 +38,12 @@ const VideoCard: React.FC<VideoCardProps> = ({
   // Only mirror if it's the local user AND NOT a screen share
   const shouldMirror = user.isLocal && !user.isScreenShare;
   
+  // Logic for audio: 
+  // 1. Always mute local user.
+  // 2. If it's a screen share, only unmute if it is explicitly FOCUSED.
+  // 3. Regular users (camera) are always unmuted (unless local).
+  const shouldMute = user.isLocal || (user.isScreenShare && !isFocused);
+  
   // Organic shapes only for grid mode, not minimal/filmstrip
   const randomRadii = [
     "24px 24px 24px 24px",
@@ -92,7 +98,7 @@ const VideoCard: React.FC<VideoCardProps> = ({
                         ref={videoRef}
                         autoPlay
                         playsInline
-                        muted={user.isLocal} // Mute self
+                        muted={shouldMute}
                         className={`w-full h-full ${shouldMirror ? 'transform scale-x-[-1]' : ''} ${user.isScreenShare || isFocused ? 'object-contain' : 'object-cover'} ${user.isVideoOff ? 'opacity-0 absolute pointer-events-none' : ''}`}
                     />
                 )}
