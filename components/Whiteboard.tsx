@@ -227,10 +227,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
           const { x, y } = getCoords(e);
           // Calculate offset from element origin
           setDragOffset({ x: x - el.x, y: y - el.y });
-          
-          if (el.type === 'text') {
-               // Double click logic could go here, but button is fine
-          }
       }
   };
 
@@ -270,6 +266,11 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
   const renderElement = (el: WhiteboardElement, isPreview = false) => {
       const isSelected = selectedId === el.id && !isPreview;
       
+      // DETERMINE INTERACTIVITY
+      // If we are in Select or Eraser mode, we want the shapes to capture events (pointerEvents: 'visiblePainted' or 'auto')
+      // If we are in Pen/Shape mode, we want clicks to pass THROUGH the shapes (pointerEvents: 'none') so we can draw on top of them.
+      const shouldCaptureEvents = tool === 'select' || tool === 'eraser';
+
       const commonProps = {
           stroke: el.stroke,
           strokeWidth: el.strokeWidth,
@@ -278,8 +279,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
              transformBox: 'fill-box', 
              transformOrigin: 'center',
              transform: `rotate(${el.rotation}deg)`,
-             pointerEvents: isPreview ? 'none' : 'visiblePainted', // Ensure we can click stroke
-             cursor: tool === 'select' ? 'move' : tool === 'eraser' ? 'crosshair' : 'default'
+             // Note: pointerEvents and cursor are now handled on the Group level to ensure ghost paths are also included/excluded
           } as any 
       };
 
@@ -332,7 +332,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
                         transformOrigin: 'center', 
                         transform: `rotate(${el.rotation}deg)`, 
                         userSelect: 'none', 
-                        cursor: tool === 'select' ? 'move' : 'text'
+                        // Text needs to inherit pointer events from group
                     }}
                     dominantBaseline="hanging"
                   >
@@ -360,6 +360,11 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
              key={el.id} 
              onPointerDown={(e) => handleElementPointerDown(e, el)}
              className="group"
+             style={{ 
+                // Toggle interactivity based on tool
+                pointerEvents: isPreview ? 'none' : (shouldCaptureEvents ? 'visiblePainted' : 'none'),
+                cursor: tool === 'select' ? 'move' : tool === 'eraser' ? 'crosshair' : 'default'
+             } as any}
           >
               {/* Invisible wide stroke for easier selection of thin lines */}
               {(el.type === 'path' || el.type === 'line' || el.type === 'arrow') && (
