@@ -653,9 +653,19 @@ const App: React.FC = () => {
         <AnimatePresence>
             {showDecorations && <ItemPalette onClose={() => setShowDecorations(false)} onSelect={handleAddDeskItem} />}
         </AnimatePresence>
+        <AnimatePresence>
+             {/* Chat Panel as a floating widget */}
+            <ChatPanel 
+                isOpen={showChat}
+                onClose={() => setShowChat(false)}
+                messages={roomMessages}
+                onSendMessage={handleSendMessage}
+                currentUserId={socketRef.current?.id || ''}
+            />
+        </AnimatePresence>
         
-        {/* Main Content Area (Row) */}
-        <div className="flex-1 flex flex-row relative z-10 overflow-hidden">
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col relative z-10 overflow-hidden">
             {/* Video Grid / Main Stage */}
             <div className={`flex-1 flex flex-col relative overflow-hidden transition-all duration-500 ${focusedUserId || showWhiteboard ? 'pt-14 pb-0' : 'pt-20 pb-32'}`}>
               <VideoGrid 
@@ -671,15 +681,6 @@ const App: React.FC = () => {
                 ) : undefined}
               />
             </div>
-
-            {/* Side Chat Panel */}
-            <ChatPanel 
-                isOpen={showChat}
-                onClose={() => setShowChat(false)}
-                messages={roomMessages}
-                onSendMessage={handleSendMessage}
-                currentUserId={socketRef.current?.id || ''}
-            />
         </div>
 
         <ControlDock 
