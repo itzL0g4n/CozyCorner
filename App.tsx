@@ -30,7 +30,7 @@ const serializeUser = (user: User): Omit<User, 'stream'> => {
 };
 
 const App: React.FC = () => {
-  const { playSound, isMuted: isSfxMuted, toggleMute: toggleSfx } = useSoundEffects();
+  const { playSound, isMuted: isSfxMuted, toggleMute: toggleSfx, initAudio } = useSoundEffects();
 
   // --- UI State ---
   const [connected, setConnected] = useState(false);
@@ -152,6 +152,7 @@ const App: React.FC = () => {
     if (e) e.preventDefault();
     if (!roomId.trim() || !userName.trim()) return;
 
+    initAudio(); // Initialize audio context on first user gesture
     playSound('glass'); // Feedback for button click
     setIsLoading(true);
     setError('');

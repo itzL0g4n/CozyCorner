@@ -18,25 +18,22 @@ export const SOUNDCLOUD_TRACK_URL = 'https://soundcloud.com/lofi_girl/4-am-study
 export const PLAYLIST: Track[] = [];
 
 export const SOUND_ASSETS = {
-  // UI & Controls
-  glass: 'https://assets.mixkit.co/sfx/preview/mixkit-software-interface-start-2574.mp3', // Soft glass tap
-  on: 'https://assets.mixkit.co/sfx/preview/mixkit-sci-fi-click-900.mp3', // High pitch bloop
-  off: 'https://assets.mixkit.co/sfx/preview/mixkit-click-error-1110.mp3', // Low pitch bloop
-  hover: 'https://assets.mixkit.co/sfx/preview/mixkit-plastic-bubble-click-1124.mp3', // Subtle hover bubble
-
-  // Notifications
-  chime: 'https://assets.mixkit.co/sfx/preview/mixkit-positive-notification-951.mp3',
+  // UI & Controls (Handled by Synth, keys kept for reference/fallback if needed)
+  // glass: 'SYNTH',
+  // on: 'SYNTH',
+  // off: 'SYNTH',
+  // chime: 'SYNTH',
   
-  // Room Events
-  join: 'https://assets.mixkit.co/sfx/preview/mixkit-doorbell-single-press-333.mp3',
-  leave: 'https://assets.mixkit.co/sfx/preview/mixkit-fast-rocket-whoosh-1714.mp3',
+  // Room Events (Wikimedia Commons - Reliable)
+  join: 'https://upload.wikimedia.org/wikipedia/commons/6/64/Doorbell_monotone.ogg',
+  leave: 'https://upload.wikimedia.org/wikipedia/commons/5/5c/Whoosh_sound_effect.ogg',
   
   // Desk Items
-  water: 'https://assets.mixkit.co/sfx/preview/mixkit-liquid-spill-2182.mp3', // Splash
-  cat: 'https://assets.mixkit.co/sfx/preview/mixkit-sweet-kitty-meow-93.mp3',
-  coffee: 'https://assets.mixkit.co/sfx/preview/mixkit-ceramics-clink-1188.mp3',
-  paper: 'https://assets.mixkit.co/sfx/preview/mixkit-paper-slide-1530.mp3',
+  water: 'https://upload.wikimedia.org/wikipedia/commons/6/6c/Pouring_water.ogg',
+  cat: 'https://upload.wikimedia.org/wikipedia/commons/b/b3/Kitten_meowing.ogg',
+  coffee: 'https://upload.wikimedia.org/wikipedia/commons/a/a5/Ceramic_cup_set_down.ogg', // Close enough to sip/clink
+  paper: 'https://upload.wikimedia.org/wikipedia/commons/e/e3/Paper_turning_page.ogg',
   
   // Tools
-  pencil: 'https://assets.mixkit.co/sfx/preview/mixkit-writing-on-paper-1647.mp3'
+  pencil: 'https://upload.wikimedia.org/wikipedia/commons/a/a2/Pencil_writing_on_paper.ogg'
 };
