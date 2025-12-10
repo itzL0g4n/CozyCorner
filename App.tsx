@@ -640,27 +640,32 @@ const App: React.FC = () => {
             {showDecorations && <ItemPalette onClose={() => setShowDecorations(false)} onSelect={handleAddDeskItem} />}
         </AnimatePresence>
         
-        <ChatPanel 
-            isOpen={showChat}
-            onClose={() => setShowChat(false)}
-            messages={roomMessages}
-            onSendMessage={handleSendMessage}
-            currentUserId={socketRef.current?.id || ''}
-        />
+        {/* Main Content Area (Row) */}
+        <div className="flex-1 flex flex-row relative z-10 overflow-hidden">
+            {/* Video Grid / Main Stage */}
+            <div className={`flex-1 flex flex-col relative overflow-hidden transition-all duration-500 ${focusedUserId || showWhiteboard ? 'pt-14 pb-0' : 'pt-20 pb-32'}`}>
+              <VideoGrid 
+                users={users} 
+                focusedUserId={focusedUserId}
+                onFocusUser={(id) => { if (id) setShowWhiteboard(false); setFocusedUserId(id); }}
+                customStage={showWhiteboard ? (
+                    <Whiteboard 
+                        elements={whiteboardElements} 
+                        onUpdate={handleWhiteboardAction} 
+                        currentUser={socketRef.current?.id || ''} 
+                    />
+                ) : undefined}
+              />
+            </div>
 
-        <div className={`flex-1 flex flex-col relative z-10 overflow-hidden transition-all duration-500 ${focusedUserId || showWhiteboard ? 'pt-14 pb-0' : 'pt-20 pb-32'}`}>
-          <VideoGrid 
-            users={users} 
-            focusedUserId={focusedUserId}
-            onFocusUser={(id) => { if (id) setShowWhiteboard(false); setFocusedUserId(id); }}
-            customStage={showWhiteboard ? (
-                <Whiteboard 
-                    elements={whiteboardElements} 
-                    onUpdate={handleWhiteboardAction} 
-                    currentUser={socketRef.current?.id || ''} 
-                />
-            ) : undefined}
-          />
+            {/* Side Chat Panel */}
+            <ChatPanel 
+                isOpen={showChat}
+                onClose={() => setShowChat(false)}
+                messages={roomMessages}
+                onSendMessage={handleSendMessage}
+                currentUserId={socketRef.current?.id || ''}
+            />
         </div>
 
         <ControlDock 
