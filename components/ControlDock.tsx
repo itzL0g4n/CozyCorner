@@ -2,7 +2,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Mic, MicOff, Video, VideoOff, Monitor, MonitorOff, Coffee, PhoneOff, Music, Sparkles, LayoutGrid, PenTool, MessageSquare
+  Mic, MicOff, Video, VideoOff, Monitor, MonitorOff, Coffee, PhoneOff, Music, Sparkles, LayoutGrid, PenTool, MessageSquare, Moon, Sun
 } from 'lucide-react';
 import { DockItem } from '../types';
 
@@ -31,6 +31,10 @@ interface ControlDockProps {
   onToggleMic: () => void;
   onToggleCamera: () => void;
   onToggleScreenShare: () => void;
+
+  // Dark Mode
+  isDarkMode?: boolean;
+  toggleDarkMode?: () => void;
 }
 
 export const ControlDock: React.FC<ControlDockProps> = ({ 
@@ -54,6 +58,8 @@ export const ControlDock: React.FC<ControlDockProps> = ({
   onToggleMic,
   onToggleCamera,
   onToggleScreenShare,
+  isDarkMode,
+  toggleDarkMode
 }) => {
   const [hoveredId, setHoveredId] = React.useState<string | null>(null);
 
@@ -126,6 +132,12 @@ export const ControlDock: React.FC<ControlDockProps> = ({
       action: () => handleDockAction(toggleTimer),
       isActive: isTimerOpen
     },
+    ...(toggleDarkMode ? [{
+        id: 'theme',
+        label: isDarkMode ? 'Light Mode' : 'Dark Mode',
+        icon: isDarkMode ? Sun : Moon,
+        action: () => handleDockAction(toggleDarkMode),
+    }] : []),
     { 
       id: 'leave', 
       label: 'Leave', 
@@ -137,7 +149,7 @@ export const ControlDock: React.FC<ControlDockProps> = ({
   return (
     <div className="fixed bottom-8 left-0 right-0 flex justify-center items-end z-50 pointer-events-none">
       <motion.div 
-        className="pointer-events-auto flex items-center gap-2 md:gap-3 px-6 py-4 bg-white/40 backdrop-blur-xl border border-white/60 rounded-3xl shadow-xl shadow-purple-500/10"
+        className="pointer-events-auto flex items-center gap-2 md:gap-3 px-6 py-4 bg-white/40 dark:bg-slate-900/60 backdrop-blur-xl border border-white/60 dark:border-slate-700/60 rounded-3xl shadow-xl shadow-purple-500/10 dark:shadow-indigo-900/20"
         initial={{ y: 100, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ type: "spring", stiffness: 200, damping: 20 }}
@@ -150,9 +162,9 @@ export const ControlDock: React.FC<ControlDockProps> = ({
             <motion.button
               key={item.id}
               className={`relative group flex items-center justify-center w-10 h-10 md:w-14 md:h-14 rounded-2xl transition-colors
-                ${isLeave ? 'bg-red-100 hover:bg-red-200 text-red-600' : 'bg-white/50 hover:bg-white/80 text-slate-700'}
-                ${item.isActive && !isLeave ? 'bg-purple-100 text-purple-700 ring-2 ring-purple-200' : ''}
-                ${isOffState ? 'bg-red-50 text-red-500 ring-2 ring-red-100' : ''}
+                ${isLeave ? 'bg-red-100 hover:bg-red-200 text-red-600 dark:bg-red-900/50 dark:text-red-300' : 'bg-white/50 hover:bg-white/80 dark:bg-slate-800/50 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200'}
+                ${item.isActive && !isLeave ? 'bg-purple-100 text-purple-700 ring-2 ring-purple-200 dark:bg-indigo-900/50 dark:text-indigo-300 dark:ring-indigo-700' : ''}
+                ${isOffState ? 'bg-red-50 text-red-500 ring-2 ring-red-100 dark:bg-red-900/20 dark:text-red-400 dark:ring-red-900/40' : ''}
               `}
               onClick={item.action}
               onHoverStart={() => setHoveredId(item.id)}
@@ -170,7 +182,7 @@ export const ControlDock: React.FC<ControlDockProps> = ({
               <AnimatePresence>
                 {hoveredId === item.id && (
                   <motion.div
-                    className="absolute -top-10 text-xs font-bold text-slate-600 bg-white/90 px-3 py-1.5 rounded-lg shadow-sm whitespace-nowrap backdrop-blur-sm"
+                    className="absolute -top-10 text-xs font-bold text-slate-600 dark:text-slate-200 bg-white/90 dark:bg-slate-800/90 px-3 py-1.5 rounded-lg shadow-sm whitespace-nowrap backdrop-blur-sm"
                     initial={{ opacity: 0, y: 10, scale: 0.8 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 5, scale: 0.8 }}
@@ -182,12 +194,12 @@ export const ControlDock: React.FC<ControlDockProps> = ({
               
               {/* Active Indicator Dot (Bottom) */}
               {item.isActive && !isLeave && (
-                <div className="absolute -bottom-1 w-1.5 h-1.5 rounded-full bg-slate-600/50" />
+                <div className="absolute -bottom-1 w-1.5 h-1.5 rounded-full bg-slate-600/50 dark:bg-slate-300/50" />
               )}
 
               {/* Unread Badge (Top Right) */}
               {item.badge && (
-                <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 rounded-full border-2 border-white animate-pulse" />
+                <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 rounded-full border-2 border-white dark:border-slate-900 animate-pulse" />
               )}
             </motion.button>
           );

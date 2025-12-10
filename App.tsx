@@ -38,6 +38,7 @@ const App: React.FC = () => {
   const [showWhiteboard, setShowWhiteboard] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [unreadMessages, setUnreadMessages] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(false);
   
   const [roomId, setRoomId] = useState('');
   const [userName, setUserName] = useState('');
@@ -568,47 +569,59 @@ const App: React.FC = () => {
 
   if (!connected) {
       return (
-          <BackgroundWrapper>
+          <div className={isDarkMode ? 'dark' : ''}>
+          <BackgroundWrapper isDarkMode={isDarkMode}>
               <div className="flex flex-col items-center justify-center h-screen w-full p-4 relative z-20">
                   <FloatyDecorations />
-                  <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white/40 backdrop-blur-xl p-8 rounded-[2.5rem] shadow-2xl border border-white/60 w-full max-w-md">
-                      <h1 className="text-4xl font-display font-bold text-slate-700 mb-2 text-center">CozyCorner</h1>
-                      <p className="text-center text-slate-600 mb-8 font-medium">A soft space to dream together.</p>
+                  <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white/40 dark:bg-slate-900/60 backdrop-blur-xl p-8 rounded-[2.5rem] shadow-2xl border border-white/60 dark:border-slate-700/60 w-full max-w-md">
+                      <h1 className="text-4xl font-display font-bold text-slate-700 dark:text-slate-100 mb-2 text-center">CozyCorner</h1>
+                      <p className="text-center text-slate-600 dark:text-slate-300 mb-8 font-medium">A soft space to dream together.</p>
                       
                       <form onSubmit={handleConnect} className="space-y-4">
                           <div>
-                              <label className="text-xs font-bold text-slate-500 uppercase ml-2">Display Name</label>
-                              <input type="text" value={userName} onChange={e => setUserName(e.target.value)} placeholder="Luna" className="w-full px-5 py-3 rounded-2xl bg-white/60 border border-white focus:ring-2 focus:ring-purple-200 outline-none font-bold text-slate-700" />
+                              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase ml-2">Display Name</label>
+                              <input type="text" value={userName} onChange={e => setUserName(e.target.value)} placeholder="Luna" className="w-full px-5 py-3 rounded-2xl bg-white/60 dark:bg-slate-800/60 border border-white dark:border-slate-600 focus:ring-2 focus:ring-purple-200 outline-none font-bold text-slate-700 dark:text-slate-100" />
                           </div>
                           <div>
-                              <label className="text-xs font-bold text-slate-500 uppercase ml-2">Room ID</label>
+                              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase ml-2">Room ID</label>
                               <div className="flex gap-2">
-                                  <input type="text" value={roomId} onChange={e => setRoomId(e.target.value)} placeholder="123456" className="w-full px-5 py-3 rounded-2xl bg-white/60 border border-white focus:ring-2 focus:ring-purple-200 outline-none font-bold text-slate-700" />
-                                  <button type="button" onClick={() => { createNewRoom(); }} className="px-3 bg-white/60 rounded-2xl hover:bg-white text-purple-600"><Sparkles size={20}/></button>
+                                  <input type="text" value={roomId} onChange={e => setRoomId(e.target.value)} placeholder="123456" className="w-full px-5 py-3 rounded-2xl bg-white/60 dark:bg-slate-800/60 border border-white dark:border-slate-600 focus:ring-2 focus:ring-purple-200 outline-none font-bold text-slate-700 dark:text-slate-100" />
+                                  <button type="button" onClick={() => { createNewRoom(); }} className="px-3 bg-white/60 dark:bg-slate-800/60 rounded-2xl hover:bg-white dark:hover:bg-slate-700 text-purple-600 dark:text-purple-400"><Sparkles size={20}/></button>
                               </div>
                           </div>
-                          {error && <div className="text-red-500 font-bold text-sm text-center bg-red-50 p-2 rounded-lg">{error}</div>}
-                          <button type="submit" disabled={isLoading} className="w-full bg-slate-800 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-slate-700 transition-all flex justify-center items-center gap-2">
+                          {error && <div className="text-red-500 font-bold text-sm text-center bg-red-50 dark:bg-red-900/20 p-2 rounded-lg">{error}</div>}
+                          <button type="submit" disabled={isLoading} className="w-full bg-slate-800 dark:bg-indigo-600 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-slate-700 dark:hover:bg-indigo-500 transition-all flex justify-center items-center gap-2">
                               {isLoading ? <Loader2 className="animate-spin" /> : <>Join Room <ArrowRight size={20} /></>}
                           </button>
                       </form>
+                      
+                      <div className="mt-6 flex justify-center">
+                         <button 
+                             onClick={() => setIsDarkMode(!isDarkMode)} 
+                             className="text-xs font-bold text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 uppercase tracking-widest"
+                         >
+                             {isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                         </button>
+                      </div>
                   </motion.div>
               </div>
           </BackgroundWrapper>
+          </div>
       );
   }
 
   return (
-    <BackgroundWrapper>
+    <div className={isDarkMode ? 'dark' : ''}>
+    <BackgroundWrapper isDarkMode={isDarkMode}>
       <div className="relative h-screen w-full flex flex-col overflow-hidden">
         <AnimatePresence>{showTimer && <PomodoroTimer />}</AnimatePresence>
-        <div className="absolute top-6 right-6 md:left-1/2 md:-translate-x-1/2 md:right-auto z-40 bg-white/30 backdrop-blur-sm px-5 py-2 rounded-full border border-white/40 shadow-sm flex items-center gap-4">
-             <h2 className="text-slate-700 font-bold flex items-center gap-2">
+        <div className="absolute top-6 right-6 md:left-1/2 md:-translate-x-1/2 md:right-auto z-40 bg-white/30 dark:bg-slate-900/40 backdrop-blur-sm px-5 py-2 rounded-full border border-white/40 dark:border-slate-700/40 shadow-sm flex items-center gap-4">
+             <h2 className="text-slate-700 dark:text-slate-200 font-bold flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
                 Room: {roomId}
              </h2>
              <div className="w-px h-4 bg-slate-400/50" />
-             <div className="flex items-center gap-1.5 text-slate-600 font-bold text-sm">
+             <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300 font-bold text-sm">
                 <Users size={14} /> {users.length}
              </div>
         </div>
@@ -689,9 +702,12 @@ const App: React.FC = () => {
             onToggleMic={toggleMic}
             onToggleCamera={toggleCamera}
             onToggleScreenShare={handleScreenShare}
+            isDarkMode={isDarkMode}
+            toggleDarkMode={() => setIsDarkMode(!isDarkMode)}
         />
       </div>
     </BackgroundWrapper>
+    </div>
   );
 };
 

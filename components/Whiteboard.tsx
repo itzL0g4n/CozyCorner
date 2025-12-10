@@ -349,10 +349,10 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
   };
 
   return (
-    <div className="flex w-full h-full bg-slate-50 relative rounded-xl overflow-hidden shadow-inner border border-slate-200">
+    <div className="flex w-full h-full bg-slate-50 dark:bg-slate-900 relative rounded-xl overflow-hidden shadow-inner border border-slate-200 dark:border-slate-800">
       
       <motion.div 
-        className="absolute left-4 top-4 md:top-1/2 md:-translate-y-1/2 flex flex-col gap-2 bg-white/95 backdrop-blur-md p-2.5 rounded-2xl shadow-xl z-20 border border-slate-100 max-h-[80%] overflow-y-auto custom-scrollbar"
+        className="absolute left-4 top-4 md:top-1/2 md:-translate-y-1/2 flex flex-col gap-2 bg-white/95 dark:bg-slate-800/95 backdrop-blur-md p-2.5 rounded-2xl shadow-xl z-20 border border-slate-100 dark:border-slate-700 max-h-[80%] overflow-y-auto custom-scrollbar"
         initial={{ x: -50, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
       >
@@ -374,37 +374,37 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
                         setSelectedId(null);
                     }}
                     title={t.label}
-                    className={`p-2.5 rounded-xl transition-all flex items-center justify-center ${tool === t.id ? 'bg-indigo-100 text-indigo-600 ring-2 ring-indigo-200' : 'text-slate-500 hover:bg-slate-100'}`}
+                    className={`p-2.5 rounded-xl transition-all flex items-center justify-center ${tool === t.id ? 'bg-indigo-100 text-indigo-600 ring-2 ring-indigo-200 dark:bg-indigo-900 dark:text-indigo-300 dark:ring-indigo-700' : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700'}`}
                 >
                     <t.icon size={20} />
                 </button>
             ))}
          </div>
          
-         <div className="h-px bg-slate-200 my-1 w-full" />
+         <div className="h-px bg-slate-200 dark:bg-slate-700 my-1 w-full" />
          
          <div className="flex gap-1 justify-between px-1">
-            <button onClick={handleUndo} disabled={history.length === 0} className="p-2 text-slate-500 hover:text-slate-700 disabled:opacity-30 rounded-lg hover:bg-slate-100 flex-1 flex justify-center">
+            <button onClick={handleUndo} disabled={history.length === 0} className="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 disabled:opacity-30 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 flex-1 flex justify-center">
                 <Undo size={18} />
             </button>
-            <button onClick={handleRedo} disabled={redoStack.length === 0} className="p-2 text-slate-500 hover:text-slate-700 disabled:opacity-30 rounded-lg hover:bg-slate-100 flex-1 flex justify-center">
+            <button onClick={handleRedo} disabled={redoStack.length === 0} className="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 disabled:opacity-30 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 flex-1 flex justify-center">
                 <Redo size={18} />
             </button>
          </div>
          
-         <div className="h-px bg-slate-200 my-1 w-full" />
+         <div className="h-px bg-slate-200 dark:bg-slate-700 my-1 w-full" />
 
          <button 
             onClick={deleteSelected} 
             disabled={!selectedId}
-            className="w-full p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-30 transition-colors flex items-center justify-center gap-2"
+            className="w-full p-2 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg disabled:opacity-30 transition-colors flex items-center justify-center gap-2"
          >
              <Trash2 size={18} />
          </button>
       </motion.div>
 
       <motion.div 
-         className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-white/95 backdrop-blur-md px-4 py-2.5 rounded-2xl shadow-xl z-20 border border-slate-100 overflow-x-auto max-w-[90vw]"
+         className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-white/95 dark:bg-slate-800/95 backdrop-blur-md px-4 py-2.5 rounded-2xl shadow-xl z-20 border border-slate-100 dark:border-slate-700 overflow-x-auto max-w-[90vw]"
          initial={{ y: -50, opacity: 0 }}
          animate={{ y: 0, opacity: 1 }}
       >
@@ -428,7 +428,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
               ))}
           </div>
           
-          <div className="w-px h-6 bg-slate-200 mx-1" />
+          <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1" />
           
           <div className="flex items-center gap-2">
               {STROKES.map(s => (
@@ -444,7 +444,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
                             }
                         }
                     }}
-                    className={`rounded-full bg-slate-800 transition-opacity ${strokeWidth === s ? 'opacity-100' : 'opacity-20 hover:opacity-60'}`}
+                    className={`rounded-full bg-slate-800 dark:bg-slate-200 transition-opacity ${strokeWidth === s ? 'opacity-100' : 'opacity-20 hover:opacity-60'}`}
                     style={{ width: s + 4, height: s + 4 }}
                   />
               ))}
@@ -453,7 +453,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
 
       <svg
         ref={svgRef}
-        className="w-full h-full touch-none cursor-crosshair"
+        className="w-full h-full touch-none cursor-crosshair bg-slate-50"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -491,19 +491,19 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                  onPointerDown={(e) => e.stopPropagation()} 
               >
-                  <div className="bg-white p-4 rounded-xl shadow-2xl flex flex-col gap-2 w-72">
-                      <label className="text-xs font-bold text-slate-500 uppercase">Edit Text</label>
+                  <div className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-2xl flex flex-col gap-2 w-72">
+                      <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Edit Text</label>
                       <textarea
                         ref={textAreaRef}
                         value={textInput}
                         onChange={(e) => setTextInput(e.target.value)}
                         placeholder="Type something..."
-                        className="w-full h-24 p-3 bg-slate-50 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-200 resize-none font-display font-bold text-slate-700 text-lg placeholder:text-slate-300"
+                        className="w-full h-24 p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-800 resize-none font-display font-bold text-slate-700 dark:text-slate-200 text-lg placeholder:text-slate-300 dark:placeholder:text-slate-600"
                         autoFocus
                       />
                       <div className="flex justify-end gap-2">
                            <button onClick={() => { setEditingTextId(null); onUpdate({ type: 'DELETE', elementId: editingTextId }); }} className="p-2 text-slate-400 hover:text-slate-600 font-bold text-sm">Cancel</button>
-                           <button onClick={handleTextUpdate} className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-1 shadow-lg shadow-indigo-200 transition-all active:scale-95">
+                           <button onClick={handleTextUpdate} className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-1 shadow-lg shadow-indigo-200 dark:shadow-none transition-all active:scale-95">
                                <Check size={16} /> Done
                            </button>
                       </div>
