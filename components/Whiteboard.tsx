@@ -87,15 +87,13 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
 
     if (tool === 'eraser') return;
 
-    // Start drawing
-    if (tool === 'pen') startLoop('pencil'); // Start loop
-
     saveHistory();
     setIsDrawing(true);
     const id = crypto.randomUUID();
     let newEl: WhiteboardElement | null = null;
 
     if (tool === 'pen') {
+      startLoop('pencil');
       newEl = {
         id, type: 'path', x, y, stroke: color, strokeWidth, rotation: 0,
         points: [{ x, y }]
@@ -109,7 +107,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
        setTextInput(''); 
        setSelectedId(id);
        setIsDrawing(false); 
-       stopLoop('pencil'); // Ensure stopped
        return;
     } else {
       newEl = {
@@ -152,9 +149,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
 
   const handlePointerUp = (e: React.PointerEvent) => {
     (e.target as Element).releasePointerCapture(e.pointerId);
-    
-    // Stop sound always
-    stopLoop('pencil');
+    stopLoop('pencil'); // Ensure stop
 
     if (tool === 'select' && dragOffset) {
         setDragOffset(null);
