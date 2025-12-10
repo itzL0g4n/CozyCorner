@@ -11,15 +11,12 @@ interface WhiteboardProps {
   elements: WhiteboardElement[];
   onUpdate: (action: { type: 'ADD' | 'UPDATE' | 'DELETE' | 'SYNC'; data?: any; elementId?: string }) => void;
   currentUser: string;
-  playSound: (key: any) => void;
-  startLoop: (key: any) => void;
-  stopLoop: (key: any) => void;
 }
 
 const COLORS = ['#1e293b', '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#ec4899'];
 const STROKES = [2, 4, 8, 12];
 
-export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, currentUser, playSound, startLoop, stopLoop }) => {
+export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, currentUser }) => {
   const [tool, setTool] = useState<WhiteboardTool>('pen');
   const [color, setColor] = useState('#1e293b');
   const [strokeWidth, setStrokeWidth] = useState(4);
@@ -56,7 +53,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
   };
 
   const handleUndo = () => {
-    playSound('glass');
     if (history.length === 0) return;
     const previousState = history[history.length - 1];
     setRedoStack(prev => [elements, ...prev]);
@@ -65,7 +61,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
   };
 
   const handleRedo = () => {
-    playSound('glass');
     if (redoStack.length === 0) return;
     const nextState = redoStack[0];
     setRedoStack(prev => prev.slice(1));
@@ -93,7 +88,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
     let newEl: WhiteboardElement | null = null;
 
     if (tool === 'pen') {
-      startLoop('pencil');
       newEl = {
         id, type: 'path', x, y, stroke: color, strokeWidth, rotation: 0,
         points: [{ x, y }]
@@ -149,7 +143,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
 
   const handlePointerUp = (e: React.PointerEvent) => {
     (e.target as Element).releasePointerCapture(e.pointerId);
-    stopLoop('pencil'); // Ensure stop
 
     if (tool === 'select' && dragOffset) {
         setDragOffset(null);
@@ -195,7 +188,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
       (e.target as Element).setPointerCapture(e.pointerId);
 
       if (tool === 'eraser') {
-          playSound('paper'); // Scrunched sound for erase
           saveHistory();
           onUpdate({ type: 'DELETE', elementId: el.id });
           return;
@@ -380,7 +372,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
                     onClick={() => {
                         setTool(t.id as WhiteboardTool);
                         setSelectedId(null);
-                        playSound('glass');
                     }}
                     title={t.label}
                     className={`p-2.5 rounded-xl transition-all flex items-center justify-center ${tool === t.id ? 'bg-indigo-100 text-indigo-600 ring-2 ring-indigo-200' : 'text-slate-500 hover:bg-slate-100'}`}
@@ -423,7 +414,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
                     key={c}
                     onClick={() => {
                         setColor(c);
-                        playSound('glass');
                         if (selectedId) {
                             const el = elements.find(e => e.id === selectedId);
                             if (el) {
@@ -446,7 +436,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
                     key={s}
                     onClick={() => {
                         setStrokeWidth(s);
-                        playSound('glass');
                         if (selectedId) {
                             const el = elements.find(e => e.id === selectedId);
                             if (el) {

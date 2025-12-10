@@ -15,7 +15,6 @@ import { User, DeskItem, DeskItemType, WhiteboardElement, WhiteboardAction, Room
 import { motion, AnimatePresence } from 'framer-motion';
 import { Users, ArrowRight, Loader2, Sparkles, RefreshCw, Wifi } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
-import { useSoundEffects } from './hooks/useSoundEffects';
 
 // Standard Google STUN servers are sufficient for most connections
 const RTC_CONFIG = {
@@ -30,8 +29,6 @@ const serializeUser = (user: User): Omit<User, 'stream'> => {
 };
 
 const App: React.FC = () => {
-  const { playSound, playLoop, stopLoop, isMuted: isSfxMuted, toggleMute: toggleSfx, initAudio } = useSoundEffects();
-
   // --- UI State ---
   const [connected, setConnected] = useState(false);
   const [showMusic, setShowMusic] = useState(false);
@@ -152,8 +149,6 @@ const App: React.FC = () => {
     if (e) e.preventDefault();
     if (!roomId.trim() || !userName.trim()) return;
 
-    initAudio(); // Initialize audio context on first user gesture
-    playSound('glass'); // Feedback for button click
     setIsLoading(true);
     setError('');
 
@@ -188,8 +183,6 @@ const App: React.FC = () => {
             setUsers([me]);
             setConnected(true);
             
-            playSound('join'); // Play join sound locally
-            
             setRoomMessages([{
                 id: 'welcome',
                 senderId: 'system',
@@ -215,7 +208,6 @@ const App: React.FC = () => {
         });
 
         socket.on('user-connected', (data: { socketId: string, user: User }) => {
-            playSound('join'); // Play join sound for others
             setUsers(prev => {
                 if (prev.find(u => u.id === data.socketId)) return prev;
                 return [...prev, { ...data.user, id: data.socketId, isLocal: false }];
@@ -237,7 +229,6 @@ const App: React.FC = () => {
         });
 
         socket.on('user-disconnected', (socketId: string) => {
-            playSound('leave'); // Play leave sound
             if (peersRef.current[socketId]) {
                 peersRef.current[socketId].close();
                 delete peersRef.current[socketId];
@@ -314,7 +305,6 @@ const App: React.FC = () => {
              setShowChat(prev => {
                  if (!prev) {
                     setUnreadMessages(true);
-                    playSound('chime'); // Notification sound
                  }
                  return prev;
              });
@@ -531,7 +521,6 @@ const App: React.FC = () => {
   }, [localStream, connected, isMicOn]);
 
   const handleAddDeskItem = (type: DeskItemType) => {
-       playSound('glass');
        const newItem: DeskItem = {
           id: crypto.randomUUID(), type, x: 50, y: 50, data: '' 
        };
@@ -595,7 +584,7 @@ const App: React.FC = () => {
                               <label className="text-xs font-bold text-slate-500 uppercase ml-2">Room ID</label>
                               <div className="flex gap-2">
                                   <input type="text" value={roomId} onChange={e => setRoomId(e.target.value)} placeholder="123456" className="w-full px-5 py-3 rounded-2xl bg-white/60 border border-white focus:ring-2 focus:ring-purple-200 outline-none font-bold text-slate-700" />
-                                  <button type="button" onClick={() => { createNewRoom(); playSound('glass'); }} className="px-3 bg-white/60 rounded-2xl hover:bg-white text-purple-600"><Sparkles size={20}/></button>
+                                  <button type="button" onClick={() => { createNewRoom(); }} className="px-3 bg-white/60 rounded-2xl hover:bg-white text-purple-600"><Sparkles size={20}/></button>
                               </div>
                           </div>
                           {error && <div className="text-red-500 font-bold text-sm text-center bg-red-50 p-2 rounded-lg">{error}</div>}
@@ -638,7 +627,6 @@ const App: React.FC = () => {
                           isEditable={!!user.isLocal && !user.isScreenShare}
                           onUpdate={(id, updates) => handleUpdateDeskItem(user.id, id, updates)}
                           onRemove={(id) => handleRemoveDeskItem(user.id, id)}
-                          playSound={playSound}
                        />
                    ))
                 )}
@@ -664,15 +652,12 @@ const App: React.FC = () => {
           <VideoGrid 
             users={users} 
             focusedUserId={focusedUserId}
-            onFocusUser={(id) => { if (id) setShowWhiteboard(false); setFocusedUserId(id); playSound('glass'); }}
+            onFocusUser={(id) => { if (id) setShowWhiteboard(false); setFocusedUserId(id); }}
             customStage={showWhiteboard ? (
                 <Whiteboard 
                     elements={whiteboardElements} 
                     onUpdate={handleWhiteboardAction} 
                     currentUser={socketRef.current?.id || ''} 
-                    playSound={playSound}
-                    startLoop={playLoop}
-                    stopLoop={stopLoop}
                 />
             ) : undefined}
           />
@@ -699,9 +684,6 @@ const App: React.FC = () => {
             onToggleMic={toggleMic}
             onToggleCamera={toggleCamera}
             onToggleScreenShare={handleScreenShare}
-            playSound={playSound}
-            isSfxMuted={isSfxMuted}
-            toggleSfx={toggleSfx}
         />
       </div>
     </BackgroundWrapper>

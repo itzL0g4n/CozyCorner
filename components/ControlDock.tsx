@@ -2,8 +2,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Mic, MicOff, Video, VideoOff, Monitor, MonitorOff, Coffee, PhoneOff, Music, Sparkles, LayoutGrid, PenTool, MessageSquare,
-  Volume2, VolumeX
+  Mic, MicOff, Video, VideoOff, Monitor, MonitorOff, Coffee, PhoneOff, Music, Sparkles, LayoutGrid, PenTool, MessageSquare
 } from 'lucide-react';
 import { DockItem } from '../types';
 
@@ -32,11 +31,6 @@ interface ControlDockProps {
   onToggleMic: () => void;
   onToggleCamera: () => void;
   onToggleScreenShare: () => void;
-
-  // SFX
-  playSound: (key: any) => void;
-  isSfxMuted: boolean;
-  toggleSfx: () => void;
 }
 
 export const ControlDock: React.FC<ControlDockProps> = ({ 
@@ -60,14 +54,10 @@ export const ControlDock: React.FC<ControlDockProps> = ({
   onToggleMic,
   onToggleCamera,
   onToggleScreenShare,
-  playSound,
-  isSfxMuted,
-  toggleSfx
 }) => {
   const [hoveredId, setHoveredId] = React.useState<string | null>(null);
 
-  const handleDockAction = (action: () => void, sound: 'glass' | 'on' | 'off' = 'glass') => {
-      playSound(sound);
+  const handleDockAction = (action: () => void) => {
       action();
   };
 
@@ -76,14 +66,14 @@ export const ControlDock: React.FC<ControlDockProps> = ({
       id: 'mic', 
       label: isMicOn ? 'Mute' : 'Unmute', 
       icon: isMicOn ? Mic : MicOff,
-      action: () => handleDockAction(onToggleMic, isMicOn ? 'off' : 'on'),
+      action: () => handleDockAction(onToggleMic),
       isActive: !isMicOn
     },
     { 
       id: 'camera', 
       label: isCameraOn ? 'Stop Video' : 'Start Video', 
       icon: isCameraOn ? Video : VideoOff,
-      action: () => handleDockAction(onToggleCamera, isCameraOn ? 'off' : 'on'),
+      action: () => handleDockAction(onToggleCamera),
       isActive: !isCameraOn
     },
     { 
@@ -126,7 +116,7 @@ export const ControlDock: React.FC<ControlDockProps> = ({
       id: 'share', 
       label: isScreenSharing ? 'Stop Sharing' : 'Share Screen', 
       icon: isScreenSharing ? MonitorOff : Monitor, 
-      action: () => handleDockAction(onToggleScreenShare, isScreenSharing ? 'off' : 'on'),
+      action: () => handleDockAction(onToggleScreenShare),
       isActive: isScreenSharing
     },
     { 
@@ -136,19 +126,11 @@ export const ControlDock: React.FC<ControlDockProps> = ({
       action: () => handleDockAction(toggleTimer),
       isActive: isTimerOpen
     },
-    // Divider logic handled by flex spacing, appending pure action buttons at end
-    {
-      id: 'sfx',
-      label: isSfxMuted ? 'Unmute SFX' : 'Mute SFX',
-      icon: isSfxMuted ? VolumeX : Volume2,
-      action: () => { toggleSfx(); }, // No sound on click to avoid paradox? or just click
-      isActive: isSfxMuted
-    },
     { 
       id: 'leave', 
       label: 'Leave', 
       icon: PhoneOff, 
-      action: () => handleDockAction(onLeave, 'off'),
+      action: () => handleDockAction(onLeave),
     },
   ];
 

@@ -1,4 +1,3 @@
-
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { SOUND_ASSETS } from '../constants';
 
@@ -28,7 +27,7 @@ export const useSoundEffects = () => {
         // Load all assets in background
         for (const [key, url] of Object.entries(SOUND_ASSETS)) {
             try {
-                const response = await fetch(url, { mode: 'cors' });
+                const response = await fetch(url as string, { mode: 'cors' });
                 const arrayBuffer = await response.arrayBuffer();
                 // Decode can happen even if context is suspended
                 const audioBuffer = await ctx.decodeAudioData(arrayBuffer);

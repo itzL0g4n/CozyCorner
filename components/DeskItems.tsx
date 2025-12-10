@@ -11,15 +11,13 @@ interface DeskItemProps {
   onUpdate: (id: string, updates: Partial<DeskItem>) => void;
   onRemove: (id: string) => void;
   containerRef?: React.RefObject<HTMLDivElement>;
-  playSound: (key: any) => void;
 }
 
 // --- Specific Item Components ---
 
-const StickyNote: React.FC<{ data: any; onChange: (val: string) => void; ownerName?: string; playSound: (k: any) => void }> = ({ data, onChange, ownerName, playSound }) => (
+const StickyNote: React.FC<{ data: any; onChange: (val: string) => void; ownerName?: string }> = ({ data, onChange, ownerName }) => (
   <div 
     className="w-32 h-32 bg-yellow-200 rounded-bl-xl shadow-lg p-2 transform rotate-1 flex flex-col group hover:scale-105 transition-transform relative"
-    onMouseEnter={() => playSound('paper')}
   >
     <div className="w-full h-4 bg-yellow-300/50 mb-1 flex-shrink-0" />
     <textarea
@@ -33,11 +31,10 @@ const StickyNote: React.FC<{ data: any; onChange: (val: string) => void; ownerNa
   </div>
 );
 
-const PottedPlant: React.FC<{ variantUrl?: string; ownerName?: string; playSound: (k: any) => void }> = ({ variantUrl, ownerName, playSound }) => {
+const PottedPlant: React.FC<{ variantUrl?: string; ownerName?: string }> = ({ variantUrl, ownerName }) => {
   const [watered, setWatered] = useState(false);
   
   const handleWater = () => {
-    playSound('water');
     setWatered(true);
     setTimeout(() => setWatered(false), 2000);
   };
@@ -65,8 +62,8 @@ const PottedPlant: React.FC<{ variantUrl?: string; ownerName?: string; playSound
   );
 };
 
-const CoffeeCup: React.FC<{ variantUrl?: string; ownerName?: string; playSound: (k: any) => void }> = ({ variantUrl, ownerName, playSound }) => (
-  <div className="relative group cursor-pointer" onClick={() => playSound('coffee')}>
+const CoffeeCup: React.FC<{ variantUrl?: string; ownerName?: string }> = ({ variantUrl, ownerName }) => (
+  <div className="relative group cursor-pointer">
     <div className="w-20 h-20 filter drop-shadow-md transition-transform hover:-translate-y-1">
         <img 
             src={variantUrl || "https://i.pinimg.com/originals/33/a5/d5/33a5d563b09c60db33a18a6be523c8a6.gif"} 
@@ -77,12 +74,11 @@ const CoffeeCup: React.FC<{ variantUrl?: string; ownerName?: string; playSound: 
   </div>
 );
 
-const PetCompanion: React.FC<{ variantUrl?: string; ownerName?: string; playSound: (k: any) => void }> = ({ variantUrl, ownerName, playSound }) => {
+const PetCompanion: React.FC<{ variantUrl?: string; ownerName?: string }> = ({ variantUrl, ownerName }) => {
   const [isJumping, setIsJumping] = useState(false);
   
   const interact = () => {
     if (!isJumping) {
-        playSound('cat');
         setIsJumping(true);
         setTimeout(() => setIsJumping(false), 1000);
     }
@@ -136,8 +132,7 @@ export const DraggableDeskItem: React.FC<DeskItemProps> = ({
   isEditable, 
   onUpdate, 
   onRemove, 
-  containerRef,
-  playSound
+  containerRef
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isSelected, setIsSelected] = useState(false);
@@ -175,7 +170,6 @@ export const DraggableDeskItem: React.FC<DeskItemProps> = ({
         const clampedY = Math.max(0, Math.min(90, yPct));
 
         onUpdate(item.id, { x: clampedX, y: clampedY });
-        playSound('glass'); // sound when placing item
     }
   };
 
@@ -232,7 +226,6 @@ export const DraggableDeskItem: React.FC<DeskItemProps> = ({
                     exit={{ opacity: 0, scale: 0.8 }}
                     onClick={(e) => {
                         e.stopPropagation();
-                        playSound('off');
                         onRemove(item.id);
                     }}
                     className="absolute -top-3 -right-3 bg-red-500 hover:bg-red-600 text-white rounded-full p-2 shadow-lg z-[100] flex items-center justify-center border-2 border-white cursor-pointer transition-transform hover:scale-110 active:scale-90"
@@ -248,12 +241,11 @@ export const DraggableDeskItem: React.FC<DeskItemProps> = ({
                 data={item.data} 
                 onChange={(txt) => onUpdate(item.id, { data: txt })} 
                 ownerName={ownerName}
-                playSound={playSound}
             />
           )}
-          {item.type === 'plant' && <PottedPlant variantUrl={item.data} ownerName={ownerName} playSound={playSound} />}
-          {item.type === 'coffee' && <CoffeeCup variantUrl={item.data} ownerName={ownerName} playSound={playSound} />}
-          {item.type === 'pet' && <PetCompanion variantUrl={item.data} ownerName={ownerName} playSound={playSound} />}
+          {item.type === 'plant' && <PottedPlant variantUrl={item.data} ownerName={ownerName} />}
+          {item.type === 'coffee' && <CoffeeCup variantUrl={item.data} ownerName={ownerName} />}
+          {item.type === 'pet' && <PetCompanion variantUrl={item.data} ownerName={ownerName} />}
 
           {ownerName && (
              <div className="mt-2 bg-white/80 backdrop-blur-md px-2 py-0.5 rounded-full text-[10px] font-bold text-slate-600 shadow-sm border border-white/50 pointer-events-none select-none whitespace-nowrap">
