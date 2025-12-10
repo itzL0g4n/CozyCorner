@@ -8,9 +8,10 @@ export const useSoundEffects = () => {
   const [isMuted, setIsMuted] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioBuffersRef = useRef<Record<string, AudioBuffer>>({});
+  const activeSourcesRef = useRef<Record<string, AudioBufferSourceNode>>({}); // For loops
   const gainNodeRef = useRef<GainNode | null>(null);
 
-  // Initialize Audio Context (lazy load on first interaction usually)
+  // Initialize Audio Context
   const initAudio = useCallback(() => {
     if (!audioContextRef.current) {
       const Ctx = window.AudioContext || (window as any).webkitAudioContext;
@@ -18,6 +19,9 @@ export const useSoundEffects = () => {
         audioContextRef.current = new Ctx();
         gainNodeRef.current = audioContextRef.current.createGain();
         gainNodeRef.current.connect(audioContextRef.current.destination);
+        
+        // Load assets once context is created
+        loadAssets();
       }
     }
     if (audioContextRef.current?.state === 'suspended') {
@@ -25,21 +29,24 @@ export const useSoundEffects = () => {
     }
   }, []);
 
-  // Preload file-based assets
-  useEffect(() => {
-    const loadSounds = async () => {
-        if (!window.AudioContext && !(window as any).webkitAudioContext) return;
-        
-        // We create a temp context just to decode if the main one isn't ready, 
-        // or just wait for init. Let's try to load when init happens or just keep URLs for Audio elements?
-        // Actually, mixing AudioContext synth and HTML5 Audio elements is fine.
-        // Let's stick to HTML5 Audio for the files (cat, water) as they are easier to handle for long samples,
-        // and Web Audio Synth for UI.
-    };
-    loadSounds();
-  }, []);
+  const loadAssets = async () => {
+    if (!audioContextRef.current) return;
+    
+    // Iterate over constants and fetch them
+    for (const [key, url] of Object.entries(SOUND_ASSETS)) {
+        try {
+            const response = await fetch(url);
+            const arrayBuffer = await response.arrayBuffer();
+            const audioBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
+            audioBuffersRef.current[key] = audioBuffer;
+            console.log(`Loaded sound: ${key}`);
+        } catch (error) {
+            console.warn(`Failed to load sound ${key}:`, error);
+        }
+    }
+  };
 
-  // Synthesizer Functions
+  // Synthesizer for UI sounds
   const playSynthSound = useCallback((type: 'glass' | 'on' | 'off' | 'hover' | 'chime') => {
     if (!audioContextRef.current || isMuted) return;
     const ctx = audioContextRef.current;
@@ -51,7 +58,6 @@ export const useSoundEffects = () => {
     gain.connect(gainNodeRef.current || ctx.destination);
 
     if (type === 'glass') {
-      // Glass Knock: High pitch sine, very short decay
       osc.type = 'sine';
       osc.frequency.setValueAtTime(800, t);
       osc.frequency.exponentialRampToValueAtTime(1200, t + 0.05);
@@ -61,7 +67,6 @@ export const useSoundEffects = () => {
       osc.stop(t + 0.1);
     } 
     else if (type === 'on') {
-      // High Bloop: Slide Up
       osc.type = 'sine';
       osc.frequency.setValueAtTime(400, t);
       osc.frequency.linearRampToValueAtTime(600, t + 0.1);
@@ -71,7 +76,6 @@ export const useSoundEffects = () => {
       osc.stop(t + 0.1);
     }
     else if (type === 'off') {
-      // Low Bloop: Slide Down
       osc.type = 'sine';
       osc.frequency.setValueAtTime(400, t);
       osc.frequency.linearRampToValueAtTime(200, t + 0.1);
@@ -81,7 +85,6 @@ export const useSoundEffects = () => {
       osc.stop(t + 0.1);
     }
     else if (type === 'hover') {
-       // Subtle Pop
        osc.type = 'triangle';
        osc.frequency.setValueAtTime(300, t);
        gain.gain.setValueAtTime(0.05, t);
@@ -90,7 +93,6 @@ export const useSoundEffects = () => {
        osc.stop(t + 0.03);
     }
     else if (type === 'chime') {
-        // Major Triad
         const freqs = [523.25, 659.25, 783.99]; // C Major
         freqs.forEach((f, i) => {
             const o = ctx.createOscillator();
@@ -104,13 +106,11 @@ export const useSoundEffects = () => {
             o.start(t);
             o.stop(t + 2);
         });
-        return; // Early return as we handled it manually
     }
   }, [isMuted]);
 
   const playSound = useCallback((key: SoundKey) => {
-    // Ensure context is running (browser policy)
-    initAudio();
+    initAudio(); // Ensure context is ready
     if (isMuted) return;
 
     // UI Sounds -> Synth
@@ -119,18 +119,57 @@ export const useSoundEffects = () => {
         return;
     }
 
-    // Asset Sounds -> HTML5 Audio
-    const url = SOUND_ASSETS[key as keyof typeof SOUND_ASSETS];
-    if (url) {
-        const audio = new Audio(url);
-        audio.volume = 0.5;
-        audio.play().catch(e => console.warn("Audio play failed", e));
+    // Buffered Assets
+    const buffer = audioBuffersRef.current[key];
+    if (buffer && audioContextRef.current) {
+        const source = audioContextRef.current.createBufferSource();
+        source.buffer = buffer;
+        source.connect(gainNodeRef.current || audioContextRef.current.destination);
+        source.start();
+    } else {
+        // Fallback or still loading
+        console.log(`Sound ${key} not ready or missing.`);
     }
   }, [isMuted, playSynthSound, initAudio]);
+
+  const playLoop = useCallback((key: string) => {
+      initAudio();
+      if (isMuted || !audioContextRef.current) return;
+      
+      // Don't start if already playing
+      if (activeSourcesRef.current[key]) return;
+
+      const buffer = audioBuffersRef.current[key];
+      if (buffer) {
+          const source = audioContextRef.current.createBufferSource();
+          source.buffer = buffer;
+          source.loop = true;
+          source.connect(gainNodeRef.current || audioContextRef.current.destination);
+          source.start();
+          activeSourcesRef.current[key] = source;
+      }
+  }, [isMuted, initAudio]);
+
+  const stopLoop = useCallback((key: string) => {
+      const source = activeSourcesRef.current[key];
+      if (source) {
+          source.stop();
+          source.disconnect();
+          delete activeSourcesRef.current[key];
+      }
+  }, []);
 
   const toggleMute = useCallback(() => {
     setIsMuted(prev => !prev);
   }, []);
 
-  return { playSound, isMuted, toggleMute, initAudio };
+  // Preload on mount if possible
+  useEffect(() => {
+      // Try to init context if user has interacted before (optional optimization)
+      if (window.AudioContext || (window as any).webkitAudioContext) {
+          initAudio();
+      }
+  }, [initAudio]);
+
+  return { playSound, playLoop, stopLoop, isMuted, toggleMute, initAudio };
 };

@@ -30,7 +30,7 @@ const serializeUser = (user: User): Omit<User, 'stream'> => {
 };
 
 const App: React.FC = () => {
-  const { playSound, isMuted: isSfxMuted, toggleMute: toggleSfx, initAudio } = useSoundEffects();
+  const { playSound, playLoop, stopLoop, isMuted: isSfxMuted, toggleMute: toggleSfx, initAudio } = useSoundEffects();
 
   // --- UI State ---
   const [connected, setConnected] = useState(false);
@@ -666,7 +666,14 @@ const App: React.FC = () => {
             focusedUserId={focusedUserId}
             onFocusUser={(id) => { if (id) setShowWhiteboard(false); setFocusedUserId(id); playSound('glass'); }}
             customStage={showWhiteboard ? (
-                <Whiteboard elements={whiteboardElements} onUpdate={handleWhiteboardAction} currentUser={socketRef.current?.id || ''} playSound={playSound} />
+                <Whiteboard 
+                    elements={whiteboardElements} 
+                    onUpdate={handleWhiteboardAction} 
+                    currentUser={socketRef.current?.id || ''} 
+                    playSound={playSound}
+                    startLoop={playLoop}
+                    stopLoop={stopLoop}
+                />
             ) : undefined}
           />
         </div>

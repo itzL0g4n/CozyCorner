@@ -12,12 +12,14 @@ interface WhiteboardProps {
   onUpdate: (action: { type: 'ADD' | 'UPDATE' | 'DELETE' | 'SYNC'; data?: any; elementId?: string }) => void;
   currentUser: string;
   playSound: (key: any) => void;
+  startLoop: (key: any) => void;
+  stopLoop: (key: any) => void;
 }
 
 const COLORS = ['#1e293b', '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#ec4899'];
 const STROKES = [2, 4, 8, 12];
 
-export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, currentUser, playSound }) => {
+export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, currentUser, playSound, startLoop, stopLoop }) => {
   const [tool, setTool] = useState<WhiteboardTool>('pen');
   const [color, setColor] = useState('#1e293b');
   const [strokeWidth, setStrokeWidth] = useState(4);
@@ -86,7 +88,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
     if (tool === 'eraser') return;
 
     // Start drawing
-    if (tool === 'pen') playSound('pencil'); // Play sfx
+    if (tool === 'pen') startLoop('pencil'); // Start loop
 
     saveHistory();
     setIsDrawing(true);
@@ -107,6 +109,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
        setTextInput(''); 
        setSelectedId(id);
        setIsDrawing(false); 
+       stopLoop('pencil'); // Ensure stopped
        return;
     } else {
       newEl = {
@@ -149,6 +152,9 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
 
   const handlePointerUp = (e: React.PointerEvent) => {
     (e.target as Element).releasePointerCapture(e.pointerId);
+    
+    // Stop sound always
+    stopLoop('pencil');
 
     if (tool === 'select' && dragOffset) {
         setDragOffset(null);
