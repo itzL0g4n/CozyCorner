@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { BackgroundWrapper } from './components/BackgroundWrapper';
 import { VideoGrid } from './components/VideoGrid';
 import { ControlDock } from './components/ControlDock';
+import { SideControls } from './components/SideControls';
 import { FloatyDecorations } from './components/FloatyDecorations';
 import { PomodoroTimer } from './components/PomodoroTimer';
 import { MusicPlayer } from './components/MusicPlayer';
@@ -683,6 +684,15 @@ const App: React.FC = () => {
 
         <ControlDock 
             onLeave={handleLeave} 
+            isMicOn={isMicOn}
+            isCameraOn={isCameraOn}
+            isScreenSharing={isScreenSharing}
+            onToggleMic={toggleMic}
+            onToggleCamera={toggleCamera}
+            onToggleScreenShare={handleScreenShare}
+        />
+        
+        <SideControls 
             toggleMusic={() => setShowMusic(!showMusic)}
             toggleStudyBuddy={() => setShowStudyBuddy(!showStudyBuddy)}
             toggleTimer={() => setShowTimer(!showTimer)}
@@ -696,14 +706,6 @@ const App: React.FC = () => {
             isWhiteboardOpen={showWhiteboard}
             isChatOpen={showChat}
             unreadMessages={unreadMessages}
-            isMicOn={isMicOn}
-            isCameraOn={isCameraOn}
-            isScreenSharing={isScreenSharing}
-            onToggleMic={toggleMic}
-            onToggleCamera={toggleCamera}
-            onToggleScreenShare={handleScreenShare}
-            isDarkMode={isDarkMode}
-            toggleDarkMode={() => setIsDarkMode(!isDarkMode)}
         />
       </div>
     </BackgroundWrapper>
