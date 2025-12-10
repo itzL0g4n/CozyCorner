@@ -69,13 +69,15 @@ io.on('connection', (socket) => {
     });
   });
 
+  // Relay Chat Messages
+  socket.on('chat-message', (payload) => {
+    // payload: { roomId, message: { ... } }
+    socket.to(payload.roomId).emit('chat-message', payload.message);
+  });
+
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
     // Broadcast to all rooms this user was in
-    // Note: socket.rooms is cleared on disconnect, so we handle this via broadcast before full cleanup usually,
-    // but io.emit sends to everyone. For efficiency, we rely on the client to handle stream closure,
-    // but here we can emit a global event or just let the peer connection fail.
-    // Better:
     socket.broadcast.emit('user-disconnected', socket.id);
   });
 });

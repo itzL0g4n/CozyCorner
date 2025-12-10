@@ -11,12 +11,13 @@ interface WhiteboardProps {
   elements: WhiteboardElement[];
   onUpdate: (action: { type: 'ADD' | 'UPDATE' | 'DELETE' | 'SYNC'; data?: any; elementId?: string }) => void;
   currentUser: string;
+  playSound: (key: any) => void;
 }
 
 const COLORS = ['#1e293b', '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#ec4899'];
 const STROKES = [2, 4, 8, 12];
 
-export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, currentUser }) => {
+export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, currentUser, playSound }) => {
   const [tool, setTool] = useState<WhiteboardTool>('pen');
   const [color, setColor] = useState('#1e293b');
   const [strokeWidth, setStrokeWidth] = useState(4);
@@ -38,7 +39,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
   const svgRef = useRef<SVGSVGElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Helper: Get robust coordinates relative to SVG
   const getCoords = (e: React.PointerEvent) => {
     if (!svgRef.current) return { x: 0, y: 0 };
     const rect = svgRef.current.getBoundingClientRect();
@@ -49,11 +49,12 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
   };
 
   const saveHistory = () => {
-    setHistory(prev => [...prev.slice(-19), elements]); // Keep last 20
+    setHistory(prev => [...prev.slice(-19), elements]); 
     setRedoStack([]);
   };
 
   const handleUndo = () => {
+    playSound('glass');
     if (history.length === 0) return;
     const previousState = history[history.length - 1];
     setRedoStack(prev => [elements, ...prev]);
@@ -62,6 +63,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
   };
 
   const handleRedo = () => {
+    playSound('glass');
     if (redoStack.length === 0) return;
     const nextState = redoStack[0];
     setRedoStack(prev => prev.slice(1));
@@ -69,32 +71,23 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
     onUpdate({ type: 'SYNC', data: nextState });
   };
 
-  // --- Interaction Handlers ---
-
   const handlePointerDown = (e: React.PointerEvent) => {
     if (editingTextId) return;
 
-    // Capture pointer for smooth tracking outside canvas bounds if needed
     (e.target as Element).setPointerCapture(e.pointerId);
 
     const { x, y } = getCoords(e);
 
-    // 1. SELECT / MOVE TOOL
     if (tool === 'select') {
-        // Check if we hit an element (logic is delegated to handleElementPointerDown normally)
-        // If we reached here, we clicked on empty canvas -> Deselect
         setSelectedId(null);
         return;
     }
 
-    // 2. ERASER TOOL
-    if (tool === 'eraser') {
-        // Eraser logic is handled on element click. 
-        // Clicking canvas does nothing.
-        return;
-    }
+    if (tool === 'eraser') return;
 
-    // 3. DRAWING TOOLS
+    // Start drawing
+    if (tool === 'pen') playSound('pencil'); // Play sfx
+
     saveHistory();
     setIsDrawing(true);
     const id = crypto.randomUUID();
@@ -109,7 +102,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
        newEl = {
          id, type: 'text', x, y, stroke: color, strokeWidth: 1, rotation: 0, text: '', fontSize: 24
        };
-       // Immediately finalize text creation and start editing
        onUpdate({ type: 'ADD', data: newEl });
        setEditingTextId(id);
        setTextInput(''); 
@@ -117,7 +109,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
        setIsDrawing(false); 
        return;
     } else {
-      // Shapes
       newEl = {
         id, type: tool as any, x, y, width: 0, height: 0, stroke: color, strokeWidth, fill: 'transparent', rotation: 0
       };
@@ -129,11 +120,9 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
   const handlePointerMove = (e: React.PointerEvent) => {
     const { x, y } = getCoords(e);
 
-    // MOVING EXISTING ELEMENT
     if (tool === 'select' && dragOffset && selectedId) {
         const el = elements.find(e => e.id === selectedId);
         if (el) {
-            // We are dragging an element
             onUpdate({ 
                 type: 'UPDATE', 
                 data: { ...el, x: x - dragOffset.x, y: y - dragOffset.y } 
@@ -142,17 +131,14 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
         return;
     }
 
-    // DRAWING NEW ELEMENT
     if (!isDrawing || !currentElement) return;
 
     if (currentElement.type === 'path') {
-      // Optimize: Append point
       setCurrentElement(prev => ({
         ...prev!,
         points: [...(prev!.points || []), { x, y }]
       }));
     } else {
-      // Resize shape
       setCurrentElement(prev => ({
         ...prev!,
         width: x - prev!.x,
@@ -164,21 +150,17 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
   const handlePointerUp = (e: React.PointerEvent) => {
     (e.target as Element).releasePointerCapture(e.pointerId);
 
-    // End Move
     if (tool === 'select' && dragOffset) {
         setDragOffset(null);
         return;
     }
 
-    // End Drawing
     if (!isDrawing) return;
     setIsDrawing(false);
 
     if (currentElement) {
         let finalElement = { ...currentElement };
 
-        // 1. Normalize Rect and Circle only (ensure positive width/height)
-        // We do NOT normalize Line or Arrow, because negative width/height implies direction (Right-to-Left / Bottom-to-Top)
         if (['rect', 'circle'].includes(finalElement.type)) {
             if ((finalElement.width || 0) < 0) {
                 finalElement.x += finalElement.width!;
@@ -190,9 +172,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
             }
         }
         
-        // 2. Validate Size (Prevent tiny invisible specks)
         if (finalElement.type !== 'path' && finalElement.type !== 'text') {
-             // Use Math.abs because Line/Arrow might have negative dimensions validly
              if (Math.abs(finalElement.width || 0) < 5 && Math.abs(finalElement.height || 0) < 5) {
                  setCurrentElement(null);
                  return;
@@ -209,14 +189,12 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
     }
   };
 
-  // --- Element Specific Handlers ---
-
   const handleElementPointerDown = (e: React.PointerEvent, el: WhiteboardElement) => {
-      // Prevent canvas from handling this event
       e.stopPropagation(); 
       (e.target as Element).setPointerCapture(e.pointerId);
 
       if (tool === 'eraser') {
+          playSound('paper'); // Scrunched sound for erase
           saveHistory();
           onUpdate({ type: 'DELETE', elementId: el.id });
           return;
@@ -225,7 +203,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
       if (tool === 'select') {
           setSelectedId(el.id);
           const { x, y } = getCoords(e);
-          // Calculate offset from element origin
           setDragOffset({ x: x - el.x, y: y - el.y });
       }
   };
@@ -239,7 +216,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
                 onUpdate({ type: 'UPDATE', data: { ...el, text: textInput } });
             }
         } else {
-             // If empty, delete
              onUpdate({ type: 'DELETE', elementId: editingTextId });
         }
         setEditingTextId(null);
@@ -255,20 +231,13 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
       }
   };
 
-  // --- Rendering Helpers ---
-
   const renderPath = (points: {x:number, y:number}[]) => {
       if (!points.length) return '';
-      // Simple L path. For smoothing, could use quadratic curves.
       return `M ${points[0].x} ${points[0].y} ` + points.slice(1).map(p => `L ${p.x} ${p.y}`).join(' ');
   };
 
   const renderElement = (el: WhiteboardElement, isPreview = false) => {
       const isSelected = selectedId === el.id && !isPreview;
-      
-      // DETERMINE INTERACTIVITY
-      // If we are in Select or Eraser mode, we want the shapes to capture events (pointerEvents: 'visiblePainted' or 'auto')
-      // If we are in Pen/Shape mode, we want clicks to pass THROUGH the shapes (pointerEvents: 'none') so we can draw on top of them.
       const shouldCaptureEvents = tool === 'select' || tool === 'eraser';
 
       const commonProps = {
@@ -279,7 +248,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
              transformBox: 'fill-box', 
              transformOrigin: 'center',
              transform: `rotate(${el.rotation}deg)`,
-             // Note: pointerEvents and cursor are now handled on the Group level to ensure ghost paths are also included/excluded
           } as any 
       };
 
@@ -303,7 +271,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
               content = <line x1={el.x} y1={el.y} x2={el.x + (el.width || 0)} y2={el.y + (el.height || 0)} {...commonProps} />;
               break;
           case 'arrow':
-              // Use specific marker color
               const markerId = `url(#arrowhead-${el.stroke.replace('#', '')})`;
               content = (
                   <g>
@@ -332,7 +299,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
                         transformOrigin: 'center', 
                         transform: `rotate(${el.rotation}deg)`, 
                         userSelect: 'none', 
-                        // Text needs to inherit pointer events from group
                     }}
                     dominantBaseline="hanging"
                   >
@@ -344,7 +310,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
               return null;
       }
       
-      // Calculate Bounding Box for Selection Indicator (Handle negative width/height for lines/arrows)
       let selX = el.x;
       let selY = el.y;
       let selW = el.width || 0;
@@ -361,12 +326,10 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
              onPointerDown={(e) => handleElementPointerDown(e, el)}
              className="group"
              style={{ 
-                // Toggle interactivity based on tool
                 pointerEvents: isPreview ? 'none' : (shouldCaptureEvents ? 'visiblePainted' : 'none'),
                 cursor: tool === 'select' ? 'move' : tool === 'eraser' ? 'crosshair' : 'default'
              } as any}
           >
-              {/* Invisible wide stroke for easier selection of thin lines */}
               {(el.type === 'path' || el.type === 'line' || el.type === 'arrow') && (
                   <path d={el.type === 'path' ? renderPath(el.points || []) : `M${el.x},${el.y} L${el.x + (el.width||0)},${el.y + (el.height||0)}`} 
                         stroke="transparent" strokeWidth={Math.max(10, el.strokeWidth + 10)} fill="none" 
@@ -395,7 +358,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
   return (
     <div className="flex w-full h-full bg-slate-50 relative rounded-xl overflow-hidden shadow-inner border border-slate-200">
       
-      {/* --- Toolbar --- */}
       <motion.div 
         className="absolute left-4 top-4 md:top-1/2 md:-translate-y-1/2 flex flex-col gap-2 bg-white/95 backdrop-blur-md p-2.5 rounded-2xl shadow-xl z-20 border border-slate-100 max-h-[80%] overflow-y-auto custom-scrollbar"
         initial={{ x: -50, opacity: 0 }}
@@ -417,6 +379,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
                     onClick={() => {
                         setTool(t.id as WhiteboardTool);
                         setSelectedId(null);
+                        playSound('glass');
                     }}
                     title={t.label}
                     className={`p-2.5 rounded-xl transition-all flex items-center justify-center ${tool === t.id ? 'bg-indigo-100 text-indigo-600 ring-2 ring-indigo-200' : 'text-slate-500 hover:bg-slate-100'}`}
@@ -428,7 +391,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
          
          <div className="h-px bg-slate-200 my-1 w-full" />
          
-         {/* Undo/Redo */}
          <div className="flex gap-1 justify-between px-1">
             <button onClick={handleUndo} disabled={history.length === 0} className="p-2 text-slate-500 hover:text-slate-700 disabled:opacity-30 rounded-lg hover:bg-slate-100 flex-1 flex justify-center">
                 <Undo size={18} />
@@ -440,7 +402,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
          
          <div className="h-px bg-slate-200 my-1 w-full" />
 
-         {/* Delete Selection */}
          <button 
             onClick={deleteSelected} 
             disabled={!selectedId}
@@ -450,19 +411,18 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
          </button>
       </motion.div>
 
-      {/* --- Properties Bar (Top) --- */}
       <motion.div 
          className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-white/95 backdrop-blur-md px-4 py-2.5 rounded-2xl shadow-xl z-20 border border-slate-100 overflow-x-auto max-w-[90vw]"
          initial={{ y: -50, opacity: 0 }}
          animate={{ y: 0, opacity: 1 }}
       >
-          {/* Colors */}
           <div className="flex items-center gap-1.5">
               {COLORS.map(c => (
                   <button
                     key={c}
                     onClick={() => {
                         setColor(c);
+                        playSound('glass');
                         if (selectedId) {
                             const el = elements.find(e => e.id === selectedId);
                             if (el) {
@@ -479,13 +439,13 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
           
           <div className="w-px h-6 bg-slate-200 mx-1" />
           
-          {/* Stroke Width */}
           <div className="flex items-center gap-2">
               {STROKES.map(s => (
                   <button
                     key={s}
                     onClick={() => {
                         setStrokeWidth(s);
+                        playSound('glass');
                         if (selectedId) {
                             const el = elements.find(e => e.id === selectedId);
                             if (el) {
@@ -501,17 +461,15 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
           </div>
       </motion.div>
 
-      {/* --- Canvas --- */}
       <svg
         ref={svgRef}
         className="w-full h-full touch-none cursor-crosshair"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp} // End drag if leaving canvas
+        onPointerLeave={handlePointerUp}
       >
         <defs>
-            {/* Generate marker for each color to support multicolored arrows */}
             {COLORS.map(c => (
                 <marker 
                     key={c} 
@@ -536,13 +494,12 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ elements, onUpdate, curr
         )}
       </svg>
       
-      {/* Text Editor Overlay */}
       <AnimatePresence>
           {editingTextId && (
               <motion.div 
                  className="absolute inset-0 z-30 bg-black/10 flex items-center justify-center backdrop-blur-[2px]"
                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                 onPointerDown={(e) => e.stopPropagation()} // Stop drawing when clicking backdrop
+                 onPointerDown={(e) => e.stopPropagation()} 
               >
                   <div className="bg-white p-4 rounded-xl shadow-2xl flex flex-col gap-2 w-72">
                       <label className="text-xs font-bold text-slate-500 uppercase">Edit Text</label>

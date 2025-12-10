@@ -11,12 +11,16 @@ interface DeskItemProps {
   onUpdate: (id: string, updates: Partial<DeskItem>) => void;
   onRemove: (id: string) => void;
   containerRef?: React.RefObject<HTMLDivElement>;
+  playSound: (key: any) => void;
 }
 
 // --- Specific Item Components ---
 
-const StickyNote: React.FC<{ data: any; onChange: (val: string) => void; ownerName?: string }> = ({ data, onChange, ownerName }) => (
-  <div className="w-32 h-32 bg-yellow-200 rounded-bl-xl shadow-lg p-2 transform rotate-1 flex flex-col group hover:scale-105 transition-transform relative">
+const StickyNote: React.FC<{ data: any; onChange: (val: string) => void; ownerName?: string; playSound: (k: any) => void }> = ({ data, onChange, ownerName, playSound }) => (
+  <div 
+    className="w-32 h-32 bg-yellow-200 rounded-bl-xl shadow-lg p-2 transform rotate-1 flex flex-col group hover:scale-105 transition-transform relative"
+    onMouseEnter={() => playSound('paper')}
+  >
     <div className="w-full h-4 bg-yellow-300/50 mb-1 flex-shrink-0" />
     <textarea
       className="flex-1 w-full bg-transparent resize-none outline-none text-slate-800 font-handwriting text-sm leading-tight placeholder:text-slate-500/50 cursor-text"
@@ -29,10 +33,11 @@ const StickyNote: React.FC<{ data: any; onChange: (val: string) => void; ownerNa
   </div>
 );
 
-const PottedPlant: React.FC<{ variantUrl?: string; ownerName?: string }> = ({ variantUrl, ownerName }) => {
+const PottedPlant: React.FC<{ variantUrl?: string; ownerName?: string; playSound: (k: any) => void }> = ({ variantUrl, ownerName, playSound }) => {
   const [watered, setWatered] = useState(false);
   
   const handleWater = () => {
+    playSound('water');
     setWatered(true);
     setTimeout(() => setWatered(false), 2000);
   };
@@ -60,8 +65,8 @@ const PottedPlant: React.FC<{ variantUrl?: string; ownerName?: string }> = ({ va
   );
 };
 
-const CoffeeCup: React.FC<{ variantUrl?: string; ownerName?: string }> = ({ variantUrl, ownerName }) => (
-  <div className="relative group cursor-pointer">
+const CoffeeCup: React.FC<{ variantUrl?: string; ownerName?: string; playSound: (k: any) => void }> = ({ variantUrl, ownerName, playSound }) => (
+  <div className="relative group cursor-pointer" onClick={() => playSound('coffee')}>
     <div className="w-20 h-20 filter drop-shadow-md transition-transform hover:-translate-y-1">
         <img 
             src={variantUrl || "https://i.pinimg.com/originals/33/a5/d5/33a5d563b09c60db33a18a6be523c8a6.gif"} 
@@ -72,11 +77,12 @@ const CoffeeCup: React.FC<{ variantUrl?: string; ownerName?: string }> = ({ vari
   </div>
 );
 
-const PetCompanion: React.FC<{ variantUrl?: string; ownerName?: string }> = ({ variantUrl, ownerName }) => {
+const PetCompanion: React.FC<{ variantUrl?: string; ownerName?: string; playSound: (k: any) => void }> = ({ variantUrl, ownerName, playSound }) => {
   const [isJumping, setIsJumping] = useState(false);
   
   const interact = () => {
     if (!isJumping) {
+        playSound('cat');
         setIsJumping(true);
         setTimeout(() => setIsJumping(false), 1000);
     }
@@ -130,7 +136,8 @@ export const DraggableDeskItem: React.FC<DeskItemProps> = ({
   isEditable, 
   onUpdate, 
   onRemove, 
-  containerRef 
+  containerRef,
+  playSound
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isSelected, setIsSelected] = useState(false);
@@ -168,6 +175,7 @@ export const DraggableDeskItem: React.FC<DeskItemProps> = ({
         const clampedY = Math.max(0, Math.min(90, yPct));
 
         onUpdate(item.id, { x: clampedX, y: clampedY });
+        playSound('glass'); // sound when placing item
     }
   };
 
@@ -177,9 +185,6 @@ export const DraggableDeskItem: React.FC<DeskItemProps> = ({
       }
   };
 
-  // Logic for animation:
-  // If editable (local user), we do NOT animate left/top because drag handles transform.
-  // If remote, we animate left/top to smoothly slide to new position.
   const animationProps = isEditable 
     ? { scale: 1, opacity: 1 }
     : { scale: 1, opacity: 1, left: `${item.x}%`, top: `${item.y}%` };
@@ -194,7 +199,6 @@ export const DraggableDeskItem: React.FC<DeskItemProps> = ({
       initial={{ scale: 0, opacity: 0, left: `${item.x}%`, top: `${item.y}%` }}
       animate={animationProps}
       transition={{ 
-         // Use spring for smooth remote movement, instantaneous for drag start
          left: { type: "spring", stiffness: 50, damping: 20 },
          top: { type: "spring", stiffness: 50, damping: 20 },
          scale: { duration: 0.2 }
@@ -202,7 +206,6 @@ export const DraggableDeskItem: React.FC<DeskItemProps> = ({
       exit={{ scale: 0, opacity: 0 }}
       className={`absolute z-50 pointer-events-auto select-none touch-none ${isSelected ? 'z-[60]' : ''}`}
       style={{ 
-        // Only set initial styles here, motion handles the rest
         left: `${item.x}%`, 
         top: `${item.y}%`,
       }}
@@ -217,12 +220,10 @@ export const DraggableDeskItem: React.FC<DeskItemProps> = ({
     >
       <div className={`transition-all relative flex flex-col items-center ${isEditable ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'}`}>
           
-          {/* Visual Indicator for Selection */}
           {isSelected && isEditable && (
               <div className="absolute -inset-4 border-2 border-dashed border-purple-300 rounded-full animate-spin-slow opacity-50 pointer-events-none" />
           )}
 
-          {/* Delete Button - Positioned carefully to not be clipped */}
           <AnimatePresence>
             {isEditable && (isHovered || isSelected) && (
                 <motion.button 
@@ -231,6 +232,7 @@ export const DraggableDeskItem: React.FC<DeskItemProps> = ({
                     exit={{ opacity: 0, scale: 0.8 }}
                     onClick={(e) => {
                         e.stopPropagation();
+                        playSound('off');
                         onRemove(item.id);
                     }}
                     className="absolute -top-3 -right-3 bg-red-500 hover:bg-red-600 text-white rounded-full p-2 shadow-lg z-[100] flex items-center justify-center border-2 border-white cursor-pointer transition-transform hover:scale-110 active:scale-90"
@@ -241,19 +243,18 @@ export const DraggableDeskItem: React.FC<DeskItemProps> = ({
             )}
           </AnimatePresence>
 
-          {/* Render Content */}
           {item.type === 'note' && (
             <StickyNote 
                 data={item.data} 
                 onChange={(txt) => onUpdate(item.id, { data: txt })} 
                 ownerName={ownerName}
+                playSound={playSound}
             />
           )}
-          {item.type === 'plant' && <PottedPlant variantUrl={item.data} ownerName={ownerName} />}
-          {item.type === 'coffee' && <CoffeeCup variantUrl={item.data} ownerName={ownerName} />}
-          {item.type === 'pet' && <PetCompanion variantUrl={item.data} ownerName={ownerName} />}
+          {item.type === 'plant' && <PottedPlant variantUrl={item.data} ownerName={ownerName} playSound={playSound} />}
+          {item.type === 'coffee' && <CoffeeCup variantUrl={item.data} ownerName={ownerName} playSound={playSound} />}
+          {item.type === 'pet' && <PetCompanion variantUrl={item.data} ownerName={ownerName} playSound={playSound} />}
 
-          {/* Persistent Owner Label */}
           {ownerName && (
              <div className="mt-2 bg-white/80 backdrop-blur-md px-2 py-0.5 rounded-full text-[10px] font-bold text-slate-600 shadow-sm border border-white/50 pointer-events-none select-none whitespace-nowrap">
                 {ownerName}

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { BackgroundWrapper } from './components/BackgroundWrapper';
 import { VideoGrid } from './components/VideoGrid';
@@ -9,10 +10,12 @@ import { StudyBuddy } from './components/StudyBuddy';
 import { ItemPalette } from './components/ItemPalette';
 import { DraggableDeskItem } from './components/DeskItems';
 import { Whiteboard } from './components/Whiteboard';
-import { User, DeskItem, DeskItemType, WhiteboardElement, WhiteboardAction } from './types';
+import { ChatPanel } from './components/ChatPanel';
+import { User, DeskItem, DeskItemType, WhiteboardElement, WhiteboardAction, RoomMessage } from './types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Users, ArrowRight, Loader2, Sparkles, RefreshCw, Wifi } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
+import { useSoundEffects } from './hooks/useSoundEffects';
 
 // Standard Google STUN servers are sufficient for most connections
 const RTC_CONFIG = {
@@ -21,13 +24,14 @@ const RTC_CONFIG = {
   ]
 };
 
-// Helper to strip non-serializable data
 const serializeUser = (user: User): Omit<User, 'stream'> => {
   const { stream, ...rest } = user;
   return rest;
 };
 
 const App: React.FC = () => {
+  const { playSound, isMuted: isSfxMuted, toggleMute: toggleSfx } = useSoundEffects();
+
   // --- UI State ---
   const [connected, setConnected] = useState(false);
   const [showMusic, setShowMusic] = useState(false);
@@ -35,6 +39,8 @@ const App: React.FC = () => {
   const [showTimer, setShowTimer] = useState(false);
   const [showDecorations, setShowDecorations] = useState(false);
   const [showWhiteboard, setShowWhiteboard] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [unreadMessages, setUnreadMessages] = useState(false);
   
   const [roomId, setRoomId] = useState('');
   const [userName, setUserName] = useState('');
@@ -45,6 +51,7 @@ const App: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
+  const [roomMessages, setRoomMessages] = useState<RoomMessage[]>([]);
   
   const [isMicOn, setIsMicOn] = useState(true);
   const [isCameraOn, setIsCameraOn] = useState(true);
@@ -60,7 +67,6 @@ const App: React.FC = () => {
   const localStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
   
-  // Sync refs
   useEffect(() => { usersRef.current = users; }, [users]);
   useEffect(() => { localStreamRef.current = localStream; }, [localStream]);
   useEffect(() => { screenStreamRef.current = screenStream; }, [screenStream]);
@@ -77,10 +83,8 @@ const App: React.FC = () => {
   const createPeerConnection = (targetSocketId: string, socket: Socket, stream: MediaStream) => {
       const pc = new RTCPeerConnection(RTC_CONFIG);
 
-      // Add local tracks
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
       
-      // Also add screen tracks if they exist
       if (screenStreamRef.current) {
           screenStreamRef.current.getTracks().forEach(track => pc.addTrack(track, screenStreamRef.current!));
       }
@@ -100,15 +104,10 @@ const App: React.FC = () => {
           
           setUsers(prev => {
              const userIndex = prev.findIndex(u => u.id === targetSocketId);
-             
-             // Check if this is a secondary stream (Screen Share)
-             // We can differentiate by checking if we already have a main stream for this user
              const existingUser = userIndex !== -1 ? prev[userIndex] : null;
              
-             // If existing user already has a DIFFERENT stream ID, this must be their screen
              if (existingUser && existingUser.stream && existingUser.stream.id !== remoteStream.id) {
                  const screenId = `${targetSocketId}-screen`;
-                 // Check if screen user already exists
                  if (prev.find(u => u.id === screenId)) return prev;
 
                  return [...prev, {
@@ -125,14 +124,12 @@ const App: React.FC = () => {
                  }];
              }
 
-             // Otherwise it's the main camera stream (or first stream)
              if (userIndex !== -1) {
                  const newUsers = [...prev];
                  newUsers[userIndex] = { ...newUsers[userIndex], stream: remoteStream };
                  return newUsers;
              }
              
-             // If we don't know the user yet (race condition), create placeholder
              return [...prev, {
                  id: targetSocketId,
                  name: 'Connecting...',
@@ -155,11 +152,11 @@ const App: React.FC = () => {
     if (e) e.preventDefault();
     if (!roomId.trim() || !userName.trim()) return;
 
+    playSound('glass'); // Feedback for button click
     setIsLoading(true);
     setError('');
 
     try {
-        // 1. Get Local Stream
         let stream = localStream;
         if (!stream) {
              stream = await navigator.mediaDevices.getUserMedia({
@@ -169,15 +166,12 @@ const App: React.FC = () => {
             setLocalStream(stream);
         }
 
-        // 2. Connect Socket
-        const socket = io(); // Connects to same host/port
+        const socket = io();
         socketRef.current = socket;
 
-        // 3. Setup Socket Events
         socket.on('connect', () => {
             console.log("Connected to signal server", socket.id);
             
-            // Initial Local User
             const me: User = {
                 id: socket.id!,
                 name: userName,
@@ -193,14 +187,21 @@ const App: React.FC = () => {
             setUsers([me]);
             setConnected(true);
             
-            // Join Room
+            playSound('join'); // Play join sound locally
+            
+            setRoomMessages([{
+                id: 'welcome',
+                senderId: 'system',
+                senderName: 'System',
+                text: `You joined room ${roomId}`,
+                timestamp: Date.now(),
+                isSystem: true
+            }]);
+            
             socket.emit('join-room', roomId, serializeUser(me));
         });
 
-        // Existing users in room (Received upon joining)
         socket.on('all-users', async (existingPeers: { socketId: string }[]) => {
-            console.log("Existing peers:", existingPeers);
-            // Initiate connections (I am the caller)
             existingPeers.forEach(async (peer) => {
                 const pc = createPeerConnection(peer.socketId, socket, stream!);
                 const offer = await pc.createOffer();
@@ -212,36 +213,53 @@ const App: React.FC = () => {
             });
         });
 
-        // New user joined (I am the callee)
         socket.on('user-connected', (data: { socketId: string, user: User }) => {
-            console.log("User joined:", data.socketId);
+            playSound('join'); // Play join sound for others
             setUsers(prev => {
                 if (prev.find(u => u.id === data.socketId)) return prev;
                 return [...prev, { ...data.user, id: data.socketId, isLocal: false }];
             });
             
-            // Send my latest state to them so they have my name/avatar immediately
+            setRoomMessages(prev => [...prev, {
+                id: Date.now().toString() + Math.random(),
+                senderId: 'system',
+                senderName: 'System',
+                text: `${data.user.name || 'Someone'} joined the room`,
+                timestamp: Date.now(),
+                isSystem: true
+            }]);
+            
             const me = usersRef.current.find(u => u.isLocal && !u.isScreenShare);
             if (me) {
                  socket.emit('state-update', { roomId, updates: serializeUser(me) });
             }
         });
 
-        // User disconnected
         socket.on('user-disconnected', (socketId: string) => {
-            console.log("User disconnected:", socketId);
+            playSound('leave'); // Play leave sound
             if (peersRef.current[socketId]) {
                 peersRef.current[socketId].close();
                 delete peersRef.current[socketId];
             }
+            
+            const user = usersRef.current.find(u => u.id === socketId);
+            if (user) {
+                setRoomMessages(prev => [...prev, {
+                    id: Date.now().toString() + Math.random(),
+                    senderId: 'system',
+                    senderName: 'System',
+                    text: `${user.name} left the room`,
+                    timestamp: Date.now(),
+                    isSystem: true
+                }]);
+            }
+
             setUsers(prev => prev.filter(u => u.id !== socketId && u.id !== `${socketId}-screen`));
         });
 
-        // WebRTC Signaling
         socket.on('signal', async (data: { sender: string, signal: any }) => {
             const { sender, signal } = data;
             
-            // Get or Create PC (Callee side creates on offer)
             let pc = peersRef.current[sender];
             if (!pc && signal.type === 'offer') {
                 pc = createPeerConnection(sender, socket, stream!);
@@ -264,7 +282,6 @@ const App: React.FC = () => {
             }
         });
 
-        // State Updates
         socket.on('state-update', (data: { socketId: string, updates: Partial<User> }) => {
             setUsers(prev => {
                 const idx = prev.findIndex(u => u.id === data.socketId);
@@ -273,13 +290,10 @@ const App: React.FC = () => {
                     newUsers[idx] = { ...newUsers[idx], ...data.updates };
                     return newUsers;
                 }
-                // If we get update for unknown user (race condition), add them
-                // We might assume they are connecting
                 return prev; 
             });
         });
 
-        // Whiteboard Updates
         socket.on('whiteboard-action', (data: { socketId: string, action: WhiteboardAction }) => {
              const action = data.action;
              if (action.type === 'ADD') {
@@ -294,13 +308,23 @@ const App: React.FC = () => {
             }
         });
 
-        // Update URL safely
+        socket.on('chat-message', (message: RoomMessage) => {
+             setRoomMessages(prev => [...prev, message]);
+             setShowChat(prev => {
+                 if (!prev) {
+                    setUnreadMessages(true);
+                    playSound('chime'); // Notification sound
+                 }
+                 return prev;
+             });
+        });
+
         try {
             const newUrl = new URL(window.location.href);
             newUrl.searchParams.set('room', roomId);
             window.history.pushState({}, '', newUrl);
         } catch (e) {
-            console.warn("Could not update URL history (likely running in sandbox):", e);
+            console.warn("Could not update URL history:", e);
         }
 
     } catch (err: any) {
@@ -317,9 +341,28 @@ const App: React.FC = () => {
   };
 
   // --- Features ---
+  
+  const handleSendMessage = (text: string) => {
+      if (!socketRef.current) return;
+      
+      const newMessage: RoomMessage = {
+          id: crypto.randomUUID(),
+          senderId: socketRef.current.id!,
+          senderName: userName,
+          text,
+          timestamp: Date.now()
+      };
+      
+      setRoomMessages(prev => [...prev, newMessage]);
+      socketRef.current.emit('chat-message', { roomId, message: newMessage });
+  };
+  
+  const toggleChat = () => {
+      setShowChat(!showChat);
+      if (!showChat) setUnreadMessages(false);
+  };
 
   const handleWhiteboardAction = (action: WhiteboardAction) => {
-      // Local update
       if (action.type === 'ADD') {
           setWhiteboardElements(prev => [...prev, action.data as WhiteboardElement]);
       } else if (action.type === 'UPDATE') {
@@ -331,7 +374,6 @@ const App: React.FC = () => {
           setWhiteboardElements(action.data as WhiteboardElement[]);
       }
 
-      // Broadcast
       if (socketRef.current) {
           socketRef.current.emit('whiteboard-action', { roomId, action });
       }
@@ -339,29 +381,18 @@ const App: React.FC = () => {
 
   const handleScreenShare = async () => {
       if (isScreenSharing) {
-          // Stop
           if (screenStream) {
               screenStream.getTracks().forEach(t => t.stop());
-              // Remove track from all peers
               Object.values(peersRef.current).forEach((pc: RTCPeerConnection) => {
-                  const senders = pc.getSenders();
-                  const screenSender = senders.find(s => s.track?.kind === 'video' && s.track.label.includes('screen')); // Rough heuristic or keep track refs
-                  // Actually, just renegotiate is hardest part of raw WebRTC
-                  // For simplicity: We won't remove tracks from PC dynamically without renegotiation which is complex.
-                  // We will just stop sending data and inform peers to remove user.
               });
           }
           setScreenStream(null);
           setIsScreenSharing(false);
           setUsers(prev => prev.filter(u => u.id !== `${socketRef.current?.id}-screen`));
-          broadcastUpdate({}); // Trigger refresh
-          // NOTE: Proper track removal + renegotiation is complex. 
-          // A full refresh might be needed for perfect cleanup in mesh, 
-          // but visually removing the user is usually enough for MVP.
-          alert("Screen share stopped. Note: Peers may need to refresh if artifacts persist.");
+          broadcastUpdate({}); 
+          alert("Screen share stopped.");
 
       } else {
-          // Start
           try {
               // @ts-ignore
               const stream = await navigator.mediaDevices.getDisplayMedia({
@@ -388,16 +419,10 @@ const App: React.FC = () => {
               setFocusedUserId(screenUser.id);
               setShowWhiteboard(false);
 
-              // Add tracks to existing connections
-              // Note: This requires renegotiation (onnegotiationneeded)
-              // For a simple implementation, we might just add tracks and hope browser handles it 
-              // or trigger a manual re-offer.
               Object.values(peersRef.current).forEach(async (pc: RTCPeerConnection) => {
                   stream.getTracks().forEach(track => pc.addTrack(track, stream));
-                  // Trigger renegotiation
                   const offer = await pc.createOffer();
                   await pc.setLocalDescription(offer);
-                  // Find socketId for this PC
                   const targetId = Object.keys(peersRef.current).find(key => peersRef.current[key] === pc);
                   if (targetId) {
                       socketRef.current?.emit('signal', { target: targetId, signal: { type: 'offer', sdp: offer } });
@@ -405,7 +430,6 @@ const App: React.FC = () => {
               });
 
               stream.getVideoTracks()[0].onended = () => {
-                  // Handle system stop button
                    setScreenStream(null);
                    setIsScreenSharing(false);
                    setUsers(prev => prev.filter(u => u.id !== `${socketRef.current?.id}-screen`));
@@ -413,7 +437,6 @@ const App: React.FC = () => {
 
           } catch (err: any) {
               if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-                 // User cancelled, do nothing
                  console.log("Screen share cancelled by user");
                  return;
               }
@@ -423,7 +446,7 @@ const App: React.FC = () => {
       }
   };
 
-  // --- Standard Event Handlers (Mic, Camera, etc) ---
+  // --- Standard Event Handlers ---
   const toggleMic = () => {
       if (localStream) {
           const track = localStream.getAudioTracks()[0];
@@ -453,7 +476,7 @@ const App: React.FC = () => {
       setConnected(false);
       setUsers([]);
       setRoomId('');
-      window.location.reload(); // Cleanest way to reset WebRTC state
+      window.location.reload();
   };
 
   const createNewRoom = () => {
@@ -506,12 +529,11 @@ const App: React.FC = () => {
     return () => { cancelAnimationFrame(animationFrame); audioContext?.close(); };
   }, [localStream, connected, isMicOn]);
 
-  // Desk Item Logic placeholders (mapped to state updates)
   const handleAddDeskItem = (type: DeskItemType) => {
+       playSound('glass');
        const newItem: DeskItem = {
           id: crypto.randomUUID(), type, x: 50, y: 50, data: '' 
        };
-       // Add some default data based on type
        if (type === 'plant') newItem.data = "https://media.tenor.com/m38BFcQuk0gAAAAi/plant.gif";
        if (type === 'coffee') newItem.data = "https://i.pinimg.com/originals/33/a5/d5/33a5d563b09c60db33a18a6be523c8a6.gif";
        if (type === 'pet') newItem.data = "https://media.tenor.com/1YELlhf9ORsAAAAi/waal-boyss-nabilaa.gif";
@@ -572,7 +594,7 @@ const App: React.FC = () => {
                               <label className="text-xs font-bold text-slate-500 uppercase ml-2">Room ID</label>
                               <div className="flex gap-2">
                                   <input type="text" value={roomId} onChange={e => setRoomId(e.target.value)} placeholder="123456" className="w-full px-5 py-3 rounded-2xl bg-white/60 border border-white focus:ring-2 focus:ring-purple-200 outline-none font-bold text-slate-700" />
-                                  <button type="button" onClick={createNewRoom} className="px-3 bg-white/60 rounded-2xl hover:bg-white text-purple-600"><Sparkles size={20}/></button>
+                                  <button type="button" onClick={() => { createNewRoom(); playSound('glass'); }} className="px-3 bg-white/60 rounded-2xl hover:bg-white text-purple-600"><Sparkles size={20}/></button>
                               </div>
                           </div>
                           {error && <div className="text-red-500 font-bold text-sm text-center bg-red-50 p-2 rounded-lg">{error}</div>}
@@ -589,7 +611,6 @@ const App: React.FC = () => {
   return (
     <BackgroundWrapper>
       <div className="relative h-screen w-full flex flex-col overflow-hidden">
-        {/* Top Bar */}
         <AnimatePresence>{showTimer && <PomodoroTimer />}</AnimatePresence>
         <div className="absolute top-6 right-6 md:left-1/2 md:-translate-x-1/2 md:right-auto z-40 bg-white/30 backdrop-blur-sm px-5 py-2 rounded-full border border-white/40 shadow-sm flex items-center gap-4">
              <h2 className="text-slate-700 font-bold flex items-center gap-2">
@@ -616,6 +637,7 @@ const App: React.FC = () => {
                           isEditable={!!user.isLocal && !user.isScreenShare}
                           onUpdate={(id, updates) => handleUpdateDeskItem(user.id, id, updates)}
                           onRemove={(id) => handleRemoveDeskItem(user.id, id)}
+                          playSound={playSound}
                        />
                    ))
                 )}
@@ -628,15 +650,22 @@ const App: React.FC = () => {
         <AnimatePresence>
             {showDecorations && <ItemPalette onClose={() => setShowDecorations(false)} onSelect={handleAddDeskItem} />}
         </AnimatePresence>
+        
+        <ChatPanel 
+            isOpen={showChat}
+            onClose={() => setShowChat(false)}
+            messages={roomMessages}
+            onSendMessage={handleSendMessage}
+            currentUserId={socketRef.current?.id || ''}
+        />
 
-        {/* Main Stage */}
         <div className={`flex-1 flex flex-col relative z-10 overflow-hidden transition-all duration-500 ${focusedUserId || showWhiteboard ? 'pt-14 pb-0' : 'pt-20 pb-32'}`}>
           <VideoGrid 
             users={users} 
             focusedUserId={focusedUserId}
-            onFocusUser={(id) => { if (id) setShowWhiteboard(false); setFocusedUserId(id); }}
+            onFocusUser={(id) => { if (id) setShowWhiteboard(false); setFocusedUserId(id); playSound('glass'); }}
             customStage={showWhiteboard ? (
-                <Whiteboard elements={whiteboardElements} onUpdate={handleWhiteboardAction} currentUser={socketRef.current?.id || ''} />
+                <Whiteboard elements={whiteboardElements} onUpdate={handleWhiteboardAction} currentUser={socketRef.current?.id || ''} playSound={playSound} />
             ) : undefined}
           />
         </div>
@@ -648,17 +677,23 @@ const App: React.FC = () => {
             toggleTimer={() => setShowTimer(!showTimer)}
             toggleDecorations={() => setShowDecorations(!showDecorations)}
             toggleWhiteboard={() => { setShowWhiteboard(!showWhiteboard); setFocusedUserId(null); }}
+            toggleChat={toggleChat}
             isMusicOpen={showMusic}
             isStudyBuddyOpen={showStudyBuddy}
             isTimerOpen={showTimer}
             isDecorationsOpen={showDecorations}
             isWhiteboardOpen={showWhiteboard}
+            isChatOpen={showChat}
+            unreadMessages={unreadMessages}
             isMicOn={isMicOn}
             isCameraOn={isCameraOn}
             isScreenSharing={isScreenSharing}
             onToggleMic={toggleMic}
             onToggleCamera={toggleCamera}
             onToggleScreenShare={handleScreenShare}
+            playSound={playSound}
+            isSfxMuted={isSfxMuted}
+            toggleSfx={toggleSfx}
         />
       </div>
     </BackgroundWrapper>

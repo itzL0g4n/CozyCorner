@@ -2,7 +2,8 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Mic, MicOff, Video, VideoOff, Monitor, MonitorOff, Coffee, PhoneOff, Music, Sparkles, LayoutGrid, PenTool
+  Mic, MicOff, Video, VideoOff, Monitor, MonitorOff, Coffee, PhoneOff, Music, Sparkles, LayoutGrid, PenTool, MessageSquare,
+  Volume2, VolumeX
 } from 'lucide-react';
 import { DockItem } from '../types';
 
@@ -12,13 +13,17 @@ interface ControlDockProps {
   toggleStudyBuddy: () => void;
   toggleTimer: () => void;
   toggleDecorations: () => void;
-  toggleWhiteboard: () => void; // New
+  toggleWhiteboard: () => void;
+  toggleChat: () => void;
   
   isMusicOpen: boolean;
   isStudyBuddyOpen: boolean;
   isTimerOpen: boolean;
   isDecorationsOpen: boolean;
-  isWhiteboardOpen: boolean; // New
+  isWhiteboardOpen: boolean;
+  isChatOpen: boolean;
+  
+  unreadMessages: boolean;
   
   // Media Controls
   isMicOn: boolean;
@@ -27,6 +32,11 @@ interface ControlDockProps {
   onToggleMic: () => void;
   onToggleCamera: () => void;
   onToggleScreenShare: () => void;
+
+  // SFX
+  playSound: (key: any) => void;
+  isSfxMuted: boolean;
+  toggleSfx: () => void;
 }
 
 export const ControlDock: React.FC<ControlDockProps> = ({ 
@@ -36,89 +46,116 @@ export const ControlDock: React.FC<ControlDockProps> = ({
   toggleTimer,
   toggleDecorations,
   toggleWhiteboard,
+  toggleChat,
   isMusicOpen,
   isStudyBuddyOpen,
   isTimerOpen,
   isDecorationsOpen,
   isWhiteboardOpen,
+  isChatOpen,
+  unreadMessages,
   isMicOn,
   isCameraOn,
   isScreenSharing,
   onToggleMic,
   onToggleCamera,
-  onToggleScreenShare
+  onToggleScreenShare,
+  playSound,
+  isSfxMuted,
+  toggleSfx
 }) => {
   const [hoveredId, setHoveredId] = React.useState<string | null>(null);
+
+  const handleDockAction = (action: () => void, sound: 'glass' | 'on' | 'off' = 'glass') => {
+      playSound(sound);
+      action();
+  };
 
   const dockItems: DockItem[] = [
     { 
       id: 'mic', 
       label: isMicOn ? 'Mute' : 'Unmute', 
       icon: isMicOn ? Mic : MicOff,
-      action: onToggleMic,
+      action: () => handleDockAction(onToggleMic, isMicOn ? 'off' : 'on'),
       isActive: !isMicOn
     },
     { 
       id: 'camera', 
       label: isCameraOn ? 'Stop Video' : 'Start Video', 
       icon: isCameraOn ? Video : VideoOff,
-      action: onToggleCamera,
+      action: () => handleDockAction(onToggleCamera, isCameraOn ? 'off' : 'on'),
       isActive: !isCameraOn
+    },
+    { 
+      id: 'chat',
+      label: isChatOpen ? 'Close Chat' : 'Room Chat',
+      icon: MessageSquare,
+      action: () => handleDockAction(toggleChat),
+      isActive: isChatOpen,
+      badge: unreadMessages
     },
     { 
       id: 'whiteboard',
       label: isWhiteboardOpen ? 'Close Board' : 'Whiteboard',
       icon: PenTool,
-      action: toggleWhiteboard,
+      action: () => handleDockAction(toggleWhiteboard),
       isActive: isWhiteboardOpen
     },
     { 
       id: 'music',
       label: 'Lofi Player',
       icon: Music,
-      action: toggleMusic,
+      action: () => handleDockAction(toggleMusic),
       isActive: isMusicOpen
     },
     { 
       id: 'study',
       label: 'Study Buddy',
       icon: Sparkles,
-      action: toggleStudyBuddy,
+      action: () => handleDockAction(toggleStudyBuddy),
       isActive: isStudyBuddyOpen
     },
     { 
       id: 'decorate',
       label: isDecorationsOpen ? 'Close Desk' : 'Decorate Desk',
-      icon: LayoutGrid, // Icon for items/grid
-      action: toggleDecorations,
+      icon: LayoutGrid,
+      action: () => handleDockAction(toggleDecorations),
       isActive: isDecorationsOpen
     },
     { 
       id: 'share', 
       label: isScreenSharing ? 'Stop Sharing' : 'Share Screen', 
       icon: isScreenSharing ? MonitorOff : Monitor, 
-      action: onToggleScreenShare,
+      action: () => handleDockAction(onToggleScreenShare, isScreenSharing ? 'off' : 'on'),
       isActive: isScreenSharing
     },
     { 
       id: 'pomodoro', 
       label: isTimerOpen ? 'Hide Timer' : 'Focus Timer', 
       icon: Coffee, 
-      action: toggleTimer,
+      action: () => handleDockAction(toggleTimer),
       isActive: isTimerOpen
+    },
+    // Divider logic handled by flex spacing, appending pure action buttons at end
+    {
+      id: 'sfx',
+      label: isSfxMuted ? 'Unmute SFX' : 'Mute SFX',
+      icon: isSfxMuted ? VolumeX : Volume2,
+      action: () => { toggleSfx(); }, // No sound on click to avoid paradox? or just click
+      isActive: isSfxMuted
     },
     { 
       id: 'leave', 
       label: 'Leave', 
       icon: PhoneOff, 
-      action: onLeave,
+      action: () => handleDockAction(onLeave, 'off'),
     },
   ];
 
   return (
     <div className="fixed bottom-8 left-0 right-0 flex justify-center items-end z-50 pointer-events-none">
       <motion.div 
-        className="pointer-events-auto flex items-center gap-3 px-6 py-4 bg-white/40 backdrop-blur-xl border border-white/60 rounded-3xl shadow-xl shadow-purple-500/10"
+        className="pointer-events-auto flex items-center gap-2 md:gap-3 px-6 py-4 bg-white/40 backdrop-blur-xl border border-white/60 rounded-3xl shadow-xl shadow-purple-500/10"
         initial={{ y: 100, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ type: "spring", stiffness: 200, damping: 20 }}
@@ -130,7 +167,7 @@ export const ControlDock: React.FC<ControlDockProps> = ({
           return (
             <motion.button
               key={item.id}
-              className={`relative group flex items-center justify-center w-12 h-12 md:w-14 md:h-14 rounded-2xl transition-colors
+              className={`relative group flex items-center justify-center w-10 h-10 md:w-14 md:h-14 rounded-2xl transition-colors
                 ${isLeave ? 'bg-red-100 hover:bg-red-200 text-red-600' : 'bg-white/50 hover:bg-white/80 text-slate-700'}
                 ${item.isActive && !isLeave ? 'bg-purple-100 text-purple-700 ring-2 ring-purple-200' : ''}
                 ${isOffState ? 'bg-red-50 text-red-500 ring-2 ring-red-100' : ''}
@@ -161,9 +198,14 @@ export const ControlDock: React.FC<ControlDockProps> = ({
                 )}
               </AnimatePresence>
               
-              {/* Active Indicator Dot */}
+              {/* Active Indicator Dot (Bottom) */}
               {item.isActive && !isLeave && (
                 <div className="absolute -bottom-1 w-1.5 h-1.5 rounded-full bg-slate-600/50" />
+              )}
+
+              {/* Unread Badge (Top Right) */}
+              {item.badge && (
+                <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 rounded-full border-2 border-white animate-pulse" />
               )}
             </motion.button>
           );

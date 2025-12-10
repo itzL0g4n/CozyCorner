@@ -31,6 +31,7 @@ export interface DockItem {
   icon: LucideIcon;
   action: () => void;
   isActive?: boolean;
+  badge?: boolean | number;
 }
 
 export interface Decoration {
@@ -56,6 +57,15 @@ export interface ChatMessage {
   text: string;
   sources?: { title: string; uri: string }[];
   timestamp: number;
+}
+
+export interface RoomMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  text: string;
+  timestamp: number;
+  isSystem?: boolean;
 }
 
 // --- Whiteboard Types ---
