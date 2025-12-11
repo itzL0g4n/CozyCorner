@@ -32,8 +32,10 @@ const VideoCard: React.FC<VideoCardProps> = ({
   useEffect(() => {
     if (user.stream && videoRef.current) {
       videoRef.current.srcObject = user.stream;
+      // Ensure it plays. This fixes the issue where sometimes video/audio doesn't start.
+      videoRef.current.play().catch(e => console.error("Autoplay prevented:", e));
     }
-  }, [user.stream]); // Removed user.isVideoOff dependency to prevent re-attaching stream needlessly
+  }, [user.stream]); 
 
   // Only mirror if it's the local user AND NOT a screen share
   const shouldMirror = user.isLocal && !user.isScreenShare;

@@ -24,8 +24,9 @@ const RTC_CONFIG = {
   ]
 };
 
-const serializeUser = (user: User): Omit<User, 'stream'> => {
-  const { stream, ...rest } = user;
+// Fix: Exclude isLocal so remote users don't claim to be local
+const serializeUser = (user: User): Omit<User, 'stream' | 'isLocal'> => {
+  const { stream, isLocal, ...rest } = user;
   return rest;
 };
 
@@ -65,10 +66,13 @@ const App: React.FC = () => {
   const usersRef = useRef<User[]>([]);
   const localStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
+  const isMicOnRef = useRef(isMicOn);
+  const iceCandidatesQueue = useRef<{ [socketId: string]: RTCIceCandidate[] }>({});
   
   useEffect(() => { usersRef.current = users; }, [users]);
   useEffect(() => { localStreamRef.current = localStream; }, [localStream]);
   useEffect(() => { screenStreamRef.current = screenStream; }, [screenStream]);
+  useEffect(() => { isMicOnRef.current = isMicOn; }, [isMicOn]);
 
   // Handle URL Params
   useEffect(() => {
@@ -94,6 +98,12 @@ const App: React.FC = () => {
                   target: targetSocketId,
                   signal: { type: 'candidate', candidate: event.candidate }
               });
+          }
+      };
+
+      pc.oniceconnectionstatechange = () => {
+          if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
+              console.warn(`Peer connection to ${targetSocketId} is ${pc.iceConnectionState}`);
           }
       };
 
@@ -212,6 +222,7 @@ const App: React.FC = () => {
         socket.on('user-connected', (data: { socketId: string, user: User }) => {
             setUsers(prev => {
                 if (prev.find(u => u.id === data.socketId)) return prev;
+                // Force isLocal to false for incoming users
                 return [...prev, { ...data.user, id: data.socketId, isLocal: false }];
             });
             
@@ -235,6 +246,7 @@ const App: React.FC = () => {
                 peersRef.current[socketId].close();
                 delete peersRef.current[socketId];
             }
+            delete iceCandidatesQueue.current[socketId];
             
             const user = usersRef.current.find(u => u.id === socketId);
             if (user) {
@@ -255,14 +267,23 @@ const App: React.FC = () => {
             const { sender, signal } = data;
             
             let pc = peersRef.current[sender];
-            if (!pc && signal.type === 'offer') {
-                pc = createPeerConnection(sender, socket, stream!);
-            }
             
-            if (!pc) return;
-
             if (signal.type === 'offer') {
+                if (!pc) {
+                    pc = createPeerConnection(sender, socket, localStreamRef.current!);
+                }
+                
                 await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+
+                // Process queued candidates
+                const queue = iceCandidatesQueue.current[sender];
+                if (queue) {
+                    while(queue.length) {
+                        const candidate = queue.shift();
+                        if (candidate) await pc.addIceCandidate(candidate).catch(e => console.warn(e));
+                    }
+                }
+
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
                 socket.emit('signal', {
@@ -270,9 +291,26 @@ const App: React.FC = () => {
                     signal: { type: 'answer', sdp: answer }
                 });
             } else if (signal.type === 'answer') {
+                if (!pc) return;
                 await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+                
+                // Process queued candidates
+                const queue = iceCandidatesQueue.current[sender];
+                if (queue) {
+                    while(queue.length) {
+                        const candidate = queue.shift();
+                        if (candidate) await pc.addIceCandidate(candidate).catch(e => console.warn(e));
+                    }
+                }
             } else if (signal.type === 'candidate') {
-                await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+                const candidate = new RTCIceCandidate(signal.candidate);
+                // Only add if remote description is set, otherwise queue
+                if (pc && pc.remoteDescription && pc.remoteDescription.type) {
+                     await pc.addIceCandidate(candidate).catch(e => console.error("Error adding candidate", e));
+                } else {
+                    if (!iceCandidatesQueue.current[sender]) iceCandidatesQueue.current[sender] = [];
+                    iceCandidatesQueue.current[sender].push(candidate);
+                }
             }
         });
 
@@ -281,7 +319,11 @@ const App: React.FC = () => {
                 const idx = prev.findIndex(u => u.id === data.socketId);
                 if (idx !== -1) {
                     const newUsers = [...prev];
-                    newUsers[idx] = { ...newUsers[idx], ...data.updates };
+                    // IMPORTANT: Filter out isLocal to prevent remote users hijacking local status
+                    const safeUpdates = { ...data.updates };
+                    delete safeUpdates.isLocal; 
+
+                    newUsers[idx] = { ...newUsers[idx], ...safeUpdates };
                     return newUsers;
                 }
                 return prev; 
@@ -329,7 +371,10 @@ const App: React.FC = () => {
 
   const broadcastUpdate = (updates: Partial<User>) => {
       if (socketRef.current) {
-          socketRef.current.emit('state-update', { roomId, updates });
+          // Send updates but ensure isLocal is not sent just in case
+          const safeUpdates = { ...updates };
+          delete safeUpdates.isLocal;
+          socketRef.current.emit('state-update', { roomId, updates: safeUpdates });
       }
   };
 
@@ -466,6 +511,7 @@ const App: React.FC = () => {
       if (screenStream) screenStream.getTracks().forEach(t => t.stop());
       Object.values(peersRef.current).forEach((pc: RTCPeerConnection) => pc.close());
       peersRef.current = {};
+      iceCandidatesQueue.current = {};
       setConnected(false);
       setUsers([]);
       setRoomId('');
@@ -479,24 +525,32 @@ const App: React.FC = () => {
   // Audio Visualizer Logic
   useEffect(() => {
     if (!localStream || !connected) return;
-    let audioContext: AudioContext;
-    let analyser: AnalyserNode;
-    let microphone: MediaStreamAudioSourceNode;
+    
+    // Prevent frequent context creation
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+
+    const audioContext = new AudioContextClass();
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 256;
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    
+    let microphone: MediaStreamAudioSourceNode | null = null;
     let animationFrame: number;
-    let wasSpeaking = false;
 
     try {
-        audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-        analyser = audioContext.createAnalyser();
-        analyser.fftSize = 256;
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
         if (localStream.getAudioTracks().length > 0) {
             microphone = audioContext.createMediaStreamSource(localStream);
             microphone.connect(analyser);
             
+            let wasSpeaking = false;
+
             const loop = () => {
-                if (!isMicOn) {
+                // If unmounted or closed
+                if (audioContext.state === 'closed') return;
+
+                // Use Ref for current mic state to avoid effect re-run
+                if (!isMicOnRef.current) {
                     if (wasSpeaking) {
                         wasSpeaking = false;
                         broadcastUpdate({ isSpeaking: false });
@@ -505,6 +559,7 @@ const App: React.FC = () => {
                     animationFrame = requestAnimationFrame(loop);
                     return;
                 }
+                
                 analyser.getByteFrequencyData(dataArray);
                 const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
                 const isSpeaking = avg > 20;
@@ -518,9 +573,15 @@ const App: React.FC = () => {
             };
             loop();
         }
-    } catch(e) { console.error(e); }
-    return () => { cancelAnimationFrame(animationFrame); audioContext?.close(); };
-  }, [localStream, connected, isMicOn]);
+    } catch(e) { console.error("Visualizer Error", e); }
+    
+    return () => { 
+        cancelAnimationFrame(animationFrame); 
+        if (audioContext.state !== 'closed') {
+            audioContext.close();
+        }
+    };
+  }, [localStream, connected]); // Dependencies minimal to prevent context recreation
 
   const handleAddDeskItem = (type: DeskItemType) => {
        const newItem: DeskItem = {
